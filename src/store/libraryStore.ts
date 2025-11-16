@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { Tablature, TabLibraryItem } from '@/types';
+import { SAMPLE_LIBRARY_ITEMS, getSampleTabById } from '@/data/sampleTabs';
 
 export interface LibraryState {
   // Library items
@@ -24,6 +25,7 @@ export interface LibraryState {
   removeItem: (id: string) => void;
   updateItem: (id: string, updates: Partial<TabLibraryItem>) => void;
   setCurrentTab: (tab: Tablature | null) => void;
+  loadTabById: (id: string) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setSearchQuery: (query: string) => void;
@@ -33,8 +35,8 @@ export interface LibraryState {
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
-  // Initial state
-  items: [],
+  // Initial state - includes sample tabs
+  items: [...SAMPLE_LIBRARY_ITEMS],
   currentTab: null,
   isLoading: false,
   error: null,
@@ -63,6 +65,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set({
       currentTab: tab,
     }),
+
+  loadTabById: (id: string) => {
+    const tab = getSampleTabById(id);
+    if (tab) {
+      set({ currentTab: tab });
+    } else {
+      set({ error: 'Tab not found' });
+    }
+  },
 
   setLoading: (loading: boolean) =>
     set({
@@ -111,7 +122,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   reset: () =>
     set({
-      items: [],
+      items: [...SAMPLE_LIBRARY_ITEMS],
       currentTab: null,
       isLoading: false,
       error: null,

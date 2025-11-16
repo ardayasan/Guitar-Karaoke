@@ -36,6 +36,8 @@ export default function LibraryScreen() {
     setSearchQuery,
     getFilteredItems,
     addItem,
+    loadTabById,
+    currentTab,
   } = useLibraryStore();
 
   const filteredItems = getFilteredItems();
@@ -75,7 +77,6 @@ export default function LibraryScreen() {
   };
 
   const handleSelectTab = (item: TabLibraryItem) => {
-    // TODO: Load the actual tablature data
     Alert.alert(
       'Select Tab',
       `Would you like to practice ${item.title} by ${item.artist}?`,
@@ -84,9 +85,20 @@ export default function LibraryScreen() {
         {
           text: 'Practice',
           onPress: () => {
-            // For now, create a mock tablature
-            // In production, this would load from the file
-            Alert.alert('Coming Soon', 'Practice mode will be implemented next!');
+            // Load the tab from sample data
+            loadTabById(item.id);
+
+            // Small delay to ensure state is updated
+            setTimeout(() => {
+              // Navigate to practice screen if tab was loaded
+              loadTabById(item.id);
+              const tab = useLibraryStore.getState().currentTab;
+              if (tab) {
+                navigation.navigate('Practice', { tab });
+              } else {
+                Alert.alert('Error', 'Failed to load tab');
+              }
+            }, 100);
           },
         },
       ]

@@ -135,6 +135,18 @@ npm run web
 3. Use a tuned acoustic or electric guitar
 4. Test in a quiet environment for best results
 
+### Sample Tablatures
+
+The app now includes **5 pre-loaded sample guitar tabs** for immediate testing without importing files:
+
+1. **Smoke on the Water** (Deep Purple) - Beginner
+2. **Seven Nation Army** (The White Stripes) - Beginner
+3. **House of the Rising Sun** (The Animals) - Intermediate
+4. **Wonderwall** (Oasis) - Intermediate
+5. **Sunshine of Your Love** (Cream) - Intermediate
+
+These samples are automatically loaded in the Tab Library on app startup, allowing you to test the practice mode and pitch detection features immediately.
+
 ## Architecture
 
 ### Audio Processing Pipeline
@@ -183,12 +195,14 @@ The app uses the YIN algorithm for pitch detection, specifically designed for mu
 - [x] UI layouts with React Native Paper
 - [x] State management with Zustand
 - [x] iOS microphone permissions
+- [x] Sample guitar tablatures (5 popular songs)
+- [x] Components directory structure
 
 ### 🚧 In Progress
 
 - [ ] AlphaTab.js integration for tablature rendering
 - [ ] Real-time note comparison and feedback system
-- [ ] Tab file import and parsing
+- [ ] Tab file import and parsing (GuitarPro, PowerTab formats)
 
 ### 📋 Planned Features
 
