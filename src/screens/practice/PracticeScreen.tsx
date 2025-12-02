@@ -23,6 +23,7 @@ import { getPitchDetectionService } from '@/services/pitch';
 import { AudioRecordingService } from '@/services/audio';
 import { AudioDetection } from '@/types';
 import { getNoteString } from '@/utils/music';
+import { startNativeAudio } from '@/services/native/nativeAudio';
 
 type PracticeScreenRouteProp = RouteProp<RootStackParamList, 'Practice'>;
 type PracticeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Practice'>;
@@ -49,50 +50,57 @@ export default function PracticeScreen() {
   const [audioService] = useState(() => new AudioRecordingService());
   const [pitchService] = useState(() => getPitchDetectionService());
   const [isListening, setIsListening] = useState(false);
+  const [stopNativeAudio, setStopNativeAudio] = useState<null | (() => void)>(null);
+
 
   useEffect(() => {
     // Initialize session
     startSession();
 
     return () => {
-      // Cleanup on unmount
-      handleStopListening();
+      if (stopNativeAudio) stopNativeAudio();
       reset();
     };
   }, []);
 
   const handleStartListening = async () => {
     try {
-      // Start pitch detection
-      pitchService.start((detection: AudioDetection | null) => {
+      // pitchService.start((detection) => {
+      //   setCurrentDetection(detection);
+      // });
+      pitchService.start((detection) => {
+        if (!detection) {
+          // log the null detection
+          // console.log('[DETECTION] null detection');
+          setCurrentDetection(null);
+          return;
+        }
+
+        console.log('[DETECTION]', {
+          f: detection.frequency,
+          note: detection.note,
+          conf: detection.confidence,
+        });
+
         setCurrentDetection(detection);
       });
 
-      // Start audio recording
-      const started = await audioService.startRecording(
-        (samples: Float32Array, timestamp: number) => {
-          // Process audio samples for pitch detection
-          pitchService.processSamples(samples, timestamp);
-        }
-      );
+      const stopFn = startNativeAudio((samples, ts) => {
+        pitchService.processSamples(samples, ts);
+      });
 
-      if (started) {
-        setIsListening(true);
-      } else {
-        Alert.alert(
-          'Permission Required',
-          'Microphone access is required for pitch detection. Please enable it in Settings.'
-        );
-      }
-    } catch (error) {
-      console.error('Error starting audio:', error);
-      Alert.alert('Error', 'Failed to start audio recording');
+      setStopNativeAudio(() => stopFn);
+      setIsListening(true);
+    } catch (err) {
+      console.error("Error starting native audio:", err);
     }
   };
 
+
   const handleStopListening = async () => {
     pitchService.stop();
-    await audioService.stopRecording();
+    if (stopNativeAudio) stopNativeAudio();
+    setStopNativeAudio(null);
     setIsListening(false);
   };
 

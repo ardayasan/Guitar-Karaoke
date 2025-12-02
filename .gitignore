@@ -1,0 +1,73 @@
+# ========= Node / JS =========
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json.*
+
+# Jest / Test / Coverage
+coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Build output 
+dist/
+build/
+web-build/
+
+# ========= Expo / React Native =========
+.expo/
+.expo-shared/
+.expo/*
+.bundle/
+
+# Metro cache
+.expo/.expo-dev-server/
+.expo/.expo-internal/
+.expo/.expo-shared/
+.expo/web/
+
+# ========= iOS / Xcode =========
+# Build çıktıları
+ios/build/
+ios/Pods/
+
+# Xcode user-specific dosyalar
+ios/**/*.xcuserstate
+ios/**/*.xcuserdatad
+ios/**/xcuserdata/
+
+# Derived data ve other caches
+DerivedData/
+
+# IOS Archives
+*.xcarchive
+
+# ========= IDE / Editor =========
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ========= OS =========
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Icon?
+._*
+
+# ========= Misc =========
+# Çeşitli log dosyaları
+*.log
+logs/
+*.tmp
+*.temp
+
+# env / config
+.env
+.env.local
+.env.*.local

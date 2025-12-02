@@ -63,68 +63,87 @@ export class AudioRecordingService {
    * @param callback Function called with audio samples as they arrive
    */
   async startRecording(callback: AudioDataCallback): Promise<boolean> {
-    try {
-      // Check permissions
-      const hasPermission = await this.hasPermissions();
-      if (!hasPermission) {
-        const granted = await this.requestPermissions();
-        if (!granted) {
-          console.error('Microphone permission denied');
-          return false;
-        }
+  console.log('[Audio] startRecording() called');
+
+  try {
+    // 1) Permissions
+    const hasPermission = await this.hasPermissions();
+    console.log('[Audio] hasPermissions:', hasPermission);
+
+    if (!hasPermission) {
+      console.log('[Audio] requesting permissions...');
+      const granted = await this.requestPermissions();
+      console.log('[Audio] permission request result:', granted);
+
+      if (!granted) {
+        console.error('[Audio] Microphone permission denied');
+        return false;
       }
-
-      // Set audio mode for recording
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: false,
-        playThroughEarpieceAndroid: false,
-      });
-
-      // Create recording with optimized settings for pitch detection
-      const { recording } = await Audio.Recording.createAsync(
-        {
-          isMeteringEnabled: true,
-          android: {
-            extension: '.wav',
-            outputFormat: Audio.AndroidOutputFormat.DEFAULT,
-            audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
-            sampleRate: this.config.sampleRate,
-            numberOfChannels: this.config.channels,
-            bitRate: 128000,
-          },
-          ios: {
-            extension: '.wav',
-            outputFormat: Audio.IOSOutputFormat.LINEARPCM,
-            audioQuality: Audio.IOSAudioQuality.HIGH,
-            sampleRate: this.config.sampleRate,
-            numberOfChannels: this.config.channels,
-            bitRate: 128000,
-            linearPCMBitDepth: this.config.bitDepth,
-            linearPCMIsBigEndian: false,
-            linearPCMIsFloat: false,
-          },
-          web: {
-            mimeType: 'audio/wav',
-            bitsPerSecond: 128000,
-          },
-        },
-        this.onRecordingStatusUpdate.bind(this)
-      );
-
-      this.recording = recording;
-      this.isRecording = true;
-      this.audioDataCallback = callback;
-
-      console.log('Audio recording started');
-      return true;
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-      return false;
     }
+
+    // 2) Set audio mode
+    console.log('[Audio] setting audio mode...');
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: false,
+      playThroughEarpieceAndroid: false,
+    });
+    console.log('[Audio] audio mode set.');
+
+    // 3) Create recording
+    console.log('[Audio] creating Recording instance...');
+
+    const recordingObject = await Audio.Recording.createAsync(
+      {
+        isMeteringEnabled: true,
+
+        android: {
+          extension: '.wav',
+          outputFormat: Audio.AndroidOutputFormat.DEFAULT,
+          audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
+          sampleRate: this.config.sampleRate,
+          numberOfChannels: this.config.channels,
+          bitRate: 128000,
+        },
+
+        ios: {
+          extension: '.wav',
+          outputFormat: Audio.IOSOutputFormat.LINEARPCM,
+          audioQuality: Audio.IOSAudioQuality.HIGH,
+          sampleRate: this.config.sampleRate,
+          numberOfChannels: this.config.channels,
+          bitRate: 128000,
+          linearPCMBitDepth: this.config.bitDepth,
+          linearPCMIsBigEndian: false,
+          linearPCMIsFloat: false,
+        },
+
+        // 🔥 TS hatasını çözen kısım:
+        web: {
+          mimeType: 'audio/wav',
+          bitsPerSecond: 128000,
+        },
+      },
+      this.onRecordingStatusUpdate.bind(this)
+    );
+
+    console.log('[Audio] Recording instance created:', !!recordingObject.recording);
+
+    // 4) Save references
+    this.recording = recordingObject.recording;
+    this.isRecording = true;
+    this.audioDataCallback = callback;
+
+    console.log('[Audio] Recording started successfully.');
+    return true;
+  } catch (error) {
+    console.error('[Audio] Failed to start recording:', error);
+    return false;
   }
+}
+
 
   /**
    * Stop recording audio
@@ -227,21 +246,17 @@ export class AudioRecordingService {
    * process the audio file in chunks. For now, this is a placeholder.
    */
   private onRecordingStatusUpdate(status: Audio.RecordingStatus): void {
-    if (status.isRecording) {
-      // In a production app, you would process audio here
-      // This would require either:
-      // 1. A native module to access raw audio buffers
-      // 2. Processing the recording file in chunks
-      // 3. Using Web Audio API on web platform
+    console.log('[AudioStatus]', status);
 
-      // For now, we'll note that this is where real-time processing would hook in
-      if (this.audioDataCallback && status.durationMillis) {
-        // Placeholder - in reality, you'd pass actual audio samples
-        // const samples = new Float32Array(this.config.bufferSize);
-        // this.audioDataCallback(samples, status.durationMillis);
-      }
+    if (status.isRecording) {
+      console.log('[AudioStatus] recording=true duration=', status.durationMillis);
+    }
+
+    if (this.audioDataCallback && status.durationMillis) {
+      console.log('[AudioStatus] callback scheduled');
     }
   }
+
 
   /**
    * Clean up resources

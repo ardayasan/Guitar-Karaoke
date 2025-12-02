@@ -23,7 +23,7 @@ export const DEFAULT_PITCH_CONFIG: PitchDetectionConfig = {
   bufferSize: 2048,
   yinThreshold: 0.15,
   minConfidence: 0.6,
-  smoothingWindow: 5,
+  smoothingWindow: 5, // attention: number of smoothing window. 
   minFrequency: GUITAR_FREQUENCY_RANGE.MIN - 10, // E2 with margin
   maxFrequency: GUITAR_FREQUENCY_RANGE.MAX + 100, // High frets with margin
 };
@@ -80,63 +80,54 @@ export class PitchDetectionService {
       return null;
     }
 
-    // Ensure we have the right buffer size
     const buffer =
       samples.length === this.config.bufferSize
         ? samples
         : samples.slice(0, this.config.bufferSize);
 
-    // Calculate RMS amplitude for noise gating
     const amplitude = this.calculateRMS(buffer);
+    const MIN_AMPLITUDE = 0.003;
 
-    // Noise gate - ignore very quiet signals
-    const MIN_AMPLITUDE = 0.01; // Adjust based on testing
     if (amplitude < MIN_AMPLITUDE) {
-      if (this.detectionCallback) {
-        this.detectionCallback(null);
-      }
+      console.log('[NO DETECTION] amplitude gate', { amplitude });
+      this.detectionCallback?.(null);
       return null;
     }
 
-    // Apply window function to reduce spectral leakage
     const windowed = applyHannWindow(buffer);
 
-    // Detect pitch using YIN algorithm
     const yinResult = this.yinDetector.detect(windowed);
-
     if (!yinResult) {
-      if (this.detectionCallback) {
-        this.detectionCallback(null);
-      }
+      console.log('[NO DETECTION] yinResult null');
+      this.detectionCallback?.(null);
       return null;
     }
 
-    // Apply smoothing filter
+    console.log('[YIN RAW]', yinResult.frequency, yinResult.confidence);
+
     const smoothed = this.smoothingFilter.addResult(yinResult);
-
     if (!smoothed) {
-      if (this.detectionCallback) {
-        this.detectionCallback(null);
-      }
+      console.log('[NO DETECTION] smoothing returned null');
+      this.detectionCallback?.(null);
       return null;
     }
 
-    // Check if confidence is high enough
     if (smoothed.confidence < this.config.minConfidence) {
-      if (this.detectionCallback) {
-        this.detectionCallback(null);
-      }
+      console.log('[NO DETECTION] low confidence', { conf: smoothed.confidence });
+      this.detectionCallback?.(null);
       return null;
     }
 
-    // Check if frequency is in valid guitar range
     if (
       smoothed.frequency < this.config.minFrequency ||
       smoothed.frequency > this.config.maxFrequency
     ) {
-      if (this.detectionCallback) {
-        this.detectionCallback(null);
-      }
+      console.log('[NO DETECTION] out of range', {
+        freq: smoothed.frequency,
+        min: this.config.minFrequency,
+        max: this.config.maxFrequency,
+      });
+      this.detectionCallback?.(null);
       return null;
     }
 
