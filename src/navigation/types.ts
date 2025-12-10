@@ -11,6 +11,7 @@ export type RootStackParamList = {
     tab: Tablature;
   };
   Settings: undefined;
+  Information: undefined;
 };
 
 declare global {

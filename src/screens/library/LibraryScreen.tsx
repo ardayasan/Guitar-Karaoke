@@ -1,225 +1,313 @@
-/**
- * Library Screen
- * Browse and manage tablature library
- */
-
-import React, { useState } from 'react';
+import React from "react";
 import {
   View,
   StyleSheet,
   FlatList,
   Alert,
-} from 'react-native';
+} from "react-native";
 import {
   Searchbar,
-  FAB,
   Card,
   Title,
   Paragraph,
   Chip,
   Text,
   Button,
-} from 'react-native-paper';
-import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '@/navigation/types';
-import { useLibraryStore } from '@/store';
-import { TabLibraryItem } from '@/types';
-import * as DocumentPicker from 'expo-document-picker';
+} from "react-native-paper";
+import { useNavigation } from "@react-navigation/native";
+import { StackNavigationProp } from "@react-navigation/stack";
+import * as DocumentPicker from "expo-document-picker";
 
-type LibraryScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Library'>;
+import { RootStackParamList } from "@/navigation/types";
+import { useLibraryStore } from "@/store";
+import { TabLibraryItem } from "@/types";
+import colors from "@/theme/colors";
+import typography from "@/theme/typography";
+
+type Nav = StackNavigationProp<RootStackParamList, "Library">;
 
 export default function LibraryScreen() {
-  const navigation = useNavigation<LibraryScreenNavigationProp>();
+  const navigation = useNavigation<Nav>();
+
   const {
     searchQuery,
     setSearchQuery,
     getFilteredItems,
-    addItem,
     loadTabById,
-    currentTab,
   } = useLibraryStore();
 
   const filteredItems = getFilteredItems();
 
+/* ============================== */
+
   const handleImportTab = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/x-guitar-pro', '*.gp5', '*.gpx', '*.gp', 'text/plain'],
+        type: ["application/x-guitar-pro", "*.gp5", "*.gpx", "*.gp", "text/plain"],
         copyToCacheDirectory: true,
       });
 
-      if (result.canceled) {
-        return;
-      }
+      if (result.canceled) return;
 
-      // For now, just show that import was attempted
       Alert.alert(
-        'Import Tab',
-        'Tab import functionality will be implemented. Selected: ' + result.assets[0].name
+        "Import Tab",
+        `Selected: ${result.assets[0].name}\nImport parser todo`
       );
-
-      // TODO: Parse the tab file and add to library
-      // const newItem: TabLibraryItem = {
-      //   id: Date.now().toString(),
-      //   title: result.assets[0].name,
-      //   artist: 'Unknown',
-      //   difficulty: 'intermediate',
-      //   duration: 0,
-      //   tempo: 120,
-      //   filePath: result.assets[0].uri,
-      // };
-      // addItem(newItem);
     } catch (error) {
-      console.error('Error importing tab:', error);
-      Alert.alert('Error', 'Failed to import tab file');
+      Alert.alert("Error", "Failed to import tab file");
     }
   };
 
-  const handleSelectTab = (item: TabLibraryItem) => {
-    Alert.alert(
-      'Select Tab',
-      `Would you like to practice ${item.title} by ${item.artist}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Practice',
-          onPress: () => {
-            // Load the tab from sample data
-            loadTabById(item.id);
+/* ============================== */
 
-            // Small delay to ensure state is updated
-            setTimeout(() => {
-              // Navigate to practice screen if tab was loaded
-              loadTabById(item.id);
-              const tab = useLibraryStore.getState().currentTab;
-              if (tab) {
-                navigation.navigate('Practice', { tab });
-              } else {
-                Alert.alert('Error', 'Failed to load tab');
-              }
-            }, 100);
-          },
-        },
-      ]
-    );
+  const handleSelectTab = (item: TabLibraryItem) => {
+    loadTabById(item.id);
+
+    setTimeout(() => {
+      const tab = useLibraryStore.getState().currentTab;
+
+      if (tab) {
+        navigation.navigate("Practice", { tab });
+      } else {
+        Alert.alert("Error", "Failed to load tab");
+      }
+    }, 100);
   };
 
+/* ============================== */
+
   const renderItem = ({ item }: { item: TabLibraryItem }) => (
-    <Card style={styles.card} onPress={() => handleSelectTab(item)}>
-      <Card.Content>
-        <Title>{item.title}</Title>
-        <Paragraph>{item.artist}</Paragraph>
-        <View style={styles.chipContainer}>
-          <Chip mode="outlined" style={styles.chip}>
+    <Card
+      style={styles.card}
+      onPress={() => handleSelectTab(item)}
+      elevation={0}
+    >
+      <Card.Content style={styles.cardContent}>
+
+        <Title style={styles.title}>
+          {item.title}
+        </Title>
+
+        <Paragraph style={styles.artist}>
+          {item.artist}
+        </Paragraph>
+
+        <View style={styles.chipRow}>
+
+          <Chip
+            style={styles.chip}
+            textStyle={styles.chipText}
+          >
             {item.difficulty}
           </Chip>
-          <Chip mode="outlined" style={styles.chip}>
+
+          <Chip
+            style={styles.chip}
+            textStyle={styles.chipText}
+          >
             {item.tempo} BPM
           </Chip>
+
           {item.bestAccuracy !== undefined && (
-            <Chip mode="outlined" style={styles.chip}>
-              Best: {item.bestAccuracy.toFixed(0)}%
+            <Chip
+              style={styles.chip}
+              textStyle={styles.chipText}
+            >
+              Best {item.bestAccuracy.toFixed(0)}%
             </Chip>
           )}
+
         </View>
+
       </Card.Content>
     </Card>
   );
 
+/* ============================== */
+
   return (
     <View style={styles.container}>
+
       <Searchbar
         placeholder="Search tabs..."
         onChangeText={setSearchQuery}
         value={searchQuery}
         style={styles.searchbar}
+        inputStyle={{ color: colors.text.primary }}
+        placeholderTextColor={colors.text.subtle}
       />
 
       {filteredItems.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No tabs in your library</Text>
-          <Text style={styles.emptySubtext}>
-            Tap the + button to import tablature files
+
+        <View style={styles.empty}>
+
+          <Text style={styles.emptyText}>
+            Your library is empty
           </Text>
+
+          <Text style={styles.emptySub}>
+            Import GuitarPro or TXT tabs to start practicing
+          </Text>
+
           <Button
             mode="contained"
             onPress={handleImportTab}
-            style={styles.emptyButton}
+            style={styles.importBtn}
             icon="plus"
+            textColor="#fff"
           >
             Import Tab
           </Button>
+
         </View>
+
       ) : (
+
         <FlatList
           data={filteredItems}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.list}
         />
+
       )}
 
-      <FAB
-        style={styles.fab}
-        icon="plus"
-        onPress={handleImportTab}
-        label="Import"
-      />
     </View>
   );
 }
 
+/* ================================================= */
+/* STYLES */
+/* ================================================= */
+
 const styles = StyleSheet.create({
+
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    paddingTop: 6,
+    backgroundColor: colors.bg.main,
   },
+
+  /* SEARCH */
+
   searchbar: {
-    margin: 16,
-    marginBottom: 8,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
+
   list: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 40,
   },
+
+  /* CARD */
+
   card: {
-    marginBottom: 12,
-    elevation: 2,
+    marginBottom: 14,
+    borderRadius: 16,
+
+    backgroundColor: "rgba(255,255,255,0.05)",
+
+    borderWidth: 1,
+    borderColor: "rgba(199,125,255,0.18)",
+
+    shadowColor: "#C77DFF",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
-  chipContainer: {
-    flexDirection: 'row',
-    marginTop: 8,
-    flexWrap: 'wrap',
+
+  cardContent: {
+    paddingVertical: 16,
   },
-  chip: {
-    marginRight: 8,
-    marginTop: 4,
+
+  /* TEXT */
+
+  title: {
+    color: "#ffffff",
+
+    fontFamily: typography.bodyMedium,
+    fontSize: 21,
+    fontWeight: "700",
+
+    letterSpacing: 0.6,
+
+    textShadowColor: "rgba(199,125,255,0.55)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#666',
-  },
-  emptySubtext: {
+
+  artist: {
+    color: "rgba(255,255,255,0.7)",
+    marginTop: 2,
+    marginBottom: 6,
+
     fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-    marginBottom: 24,
+    letterSpacing: 0.3,
   },
-  emptyButton: {
-    marginTop: 8,
+
+  /* CHIPS */
+
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 6,
   },
-  fab: {
-    position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: 0,
+
+  chip: {
+    backgroundColor: "rgba(199,125,255,0.10)",
+
+    borderWidth: 1,
+    borderColor: "rgba(199,125,255,0.20)",
+
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+
+    borderRadius: 999,
+
+    shadowColor: "#C77DFF",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
+
+  chipText: {
+    fontSize: 11,
+    lineHeight: 14,
+    color: "#e5c2ff",
+    letterSpacing: 0.45,
+  },
+
+  /* EMPTY */
+
+  empty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+
+  emptyText: {
+    color: colors.text.primary,
+    fontSize: 18,
+    fontWeight: "600",
+  },
+
+  emptySub: {
+    color: colors.text.subtle,
+    textAlign: "center",
+    marginVertical: 12,
+    maxWidth: 280,
+  },
+
+  importBtn: {
+    backgroundColor: colors.brand.primary,
+    borderRadius: 18,
+    marginTop: 6,
+  },
+
 });

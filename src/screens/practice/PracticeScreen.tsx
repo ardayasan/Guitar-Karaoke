@@ -1,60 +1,67 @@
 /**
  * Practice Screen
  * Main practice interface with real-time pitch detection and feedback
+ * — SmartTab FINAL STABLE HUD (SCROLL FIXED)
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import React, { useEffect, useState } from "react";
+import { View, StyleSheet, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Button,
   Card,
   Title,
-  Paragraph,
   ProgressBar,
   Surface,
   Text,
-  IconButton,
-} from 'react-native-paper';
-import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '@/navigation/types';
-import { usePracticeStore } from '@/store';
-import { getPitchDetectionService } from '@/services/pitch';
-import { AudioRecordingService } from '@/services/audio';
-import { AudioDetection } from '@/types';
-import { getNoteString } from '@/utils/music';
-import { startNativeAudio } from '@/services/native/nativeAudio';
+} from "react-native-paper";
 
-type PracticeScreenRouteProp = RouteProp<RootStackParamList, 'Practice'>;
-type PracticeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Practice'>;
+import { useRoute, useNavigation, RouteProp } from "@react-navigation/native";
+import { StackNavigationProp } from "@react-navigation/stack";
+
+import { RootStackParamList } from "@/navigation/types";
+import { usePracticeStore } from "@/store";
+import { getPitchDetectionService } from "@/services/pitch";
+import { startNativeAudio } from "@/services/native/nativeAudio";
+import { getNoteString } from "@/utils/music";
+
+import colors from "@/theme/colors";
+import PracticeTabTimeline from "./components/PracticeTabTimeline";
+
+/* ================================================= */
+
+type PracticeScreenRouteProp = RouteProp<RootStackParamList, "Practice">;
+type PracticeScreenNavigationProp =
+  StackNavigationProp<RootStackParamList, "Practice">;
+
+/* ================================================= */
 
 export default function PracticeScreen() {
   const route = useRoute<PracticeScreenRouteProp>();
-  const navigation = useNavigation<PracticeScreenNavigationProp>();
+  const navigation =
+    useNavigation<PracticeScreenNavigationProp>();
   const tab = route.params.tab;
 
   const {
-    isActive,
-    isPaused,
     stats,
     currentDetection,
     currentFeedback,
     startSession,
     pauseSession,
-    resumeSession,
     endSession,
     setCurrentDetection,
     reset,
   } = usePracticeStore();
 
-  const [audioService] = useState(() => new AudioRecordingService());
-  const [pitchService] = useState(() => getPitchDetectionService());
+  const [pitchService] = useState(() =>
+    getPitchDetectionService()
+  );
   const [isListening, setIsListening] = useState(false);
-  const [stopNativeAudio, setStopNativeAudio] = useState<null | (() => void)>(null);
+  const [stopNativeAudio, setStopNativeAudio] =
+    useState<null | (() => void)>(null);
 
-
+  /* ===== INIT ===== */
   useEffect(() => {
-    // Initialize session
     startSession();
 
     return () => {
@@ -63,41 +70,21 @@ export default function PracticeScreen() {
     };
   }, []);
 
-  const handleStartListening = async () => {
-    try {
-      // pitchService.start((detection) => {
-      //   setCurrentDetection(detection);
-      // });
-      pitchService.start((detection) => {
-        if (!detection) {
-          // log the null detection
-          // console.log('[DETECTION] null detection');
-          setCurrentDetection(null);
-          return;
-        }
+  /* ===== AUDIO ===== */
+  const handleStartListening = () => {
+    pitchService.start((detection) =>
+      setCurrentDetection(detection ?? null)
+    );
 
-        console.log('[DETECTION]', {
-          f: detection.frequency,
-          note: detection.note,
-          conf: detection.confidence,
-        });
+    const stop = startNativeAudio((samples, ts) => {
+      pitchService.processSamples(samples, ts);
+    });
 
-        setCurrentDetection(detection);
-      });
-
-      const stopFn = startNativeAudio((samples, ts) => {
-        pitchService.processSamples(samples, ts);
-      });
-
-      setStopNativeAudio(() => stopFn);
-      setIsListening(true);
-    } catch (err) {
-      console.error("Error starting native audio:", err);
-    }
+    setStopNativeAudio(() => stop);
+    setIsListening(true);
   };
 
-
-  const handleStopListening = async () => {
+  const handleStopListening = () => {
     pitchService.stop();
     if (stopNativeAudio) stopNativeAudio();
     setStopNativeAudio(null);
@@ -109,227 +96,324 @@ export default function PracticeScreen() {
     handleStopListening();
   };
 
-  const handleResume = () => {
-    resumeSession();
-    handleStartListening();
+  const handleQuit = () => {
+    if (isListening) handleStopListening();
+    endSession();
+    navigation.goBack();
   };
 
-  const handleEnd = () => {
-    Alert.alert(
-      'End Practice',
-      'Are you sure you want to end this practice session?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'End',
-          style: 'destructive',
-          onPress: () => {
-            handleStopListening();
-            endSession();
-            navigation.goBack();
-          },
-        },
-      ]
-    );
-  };
-
+  /* ===== FEEDBACK COLOR ===== */
   const getFeedbackColor = () => {
-    if (!currentFeedback) return '#999';
+    if (!currentFeedback) return colors.text.subtle;
+
     switch (currentFeedback.type) {
-      case 'correct':
-        return '#4caf50';
-      case 'incorrect':
-        return '#f44336';
-      case 'missed':
-        return '#ff9800';
+      case "correct":
+        return "#53ff9a";
+      case "incorrect":
+        return "#ff5c5c";
+      case "missed":
+        return "#ffb74d";
       default:
-        return '#999';
+        return colors.text.subtle;
     }
   };
 
   return (
-    <View style={styles.container}>
-      {/* Song Info */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title>{tab.metadata.title}</Title>
-          <Paragraph>{tab.metadata.artist}</Paragraph>
-          <Paragraph>Tempo: {tab.metadata.tempo} BPM</Paragraph>
-        </Card.Content>
-      </Card>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: colors.bg.main }}
+      edges={["top"]}
+    >
 
-      {/* Current Detection Display */}
-      <Surface style={styles.detectionSurface}>
-        <Text style={styles.detectionLabel}>Current Note:</Text>
-        <Text style={[styles.detectionText, { color: getFeedbackColor() }]}>
-          {currentDetection?.note
-            ? getNoteString(currentDetection.note)
-            : '--'}
-        </Text>
-        {currentDetection && (
-          <Text style={styles.frequencyText}>
-            {currentDetection.frequency.toFixed(2)} Hz
-            {' • '}
-            {(currentDetection.confidence * 100).toFixed(0)}% confidence
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
+
+        {/* ===== HUD HEADER BAR ===== */}
+        <View style={styles.headerBar}>
+          <Text style={styles.headerTitle}>
+            {tab.metadata.title}
           </Text>
-        )}
-      </Surface>
 
-      {/* Stats Display */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title>Statistics</Title>
-          <View style={styles.statRow}>
-            <Text>Accuracy:</Text>
-            <Text style={styles.statValue}>
-              {stats.averageAccuracy.toFixed(1)}%
-            </Text>
-          </View>
-          <ProgressBar
-            progress={stats.averageAccuracy / 100}
-            color="#6200ee"
-            style={styles.progressBar}
-          />
-          <View style={styles.statRow}>
-            <Text>Correct:</Text>
-            <Text style={styles.statValue}>{stats.correctNotes}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text>Incorrect:</Text>
-            <Text style={styles.statValue}>{stats.incorrectNotes}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text>Current Streak:</Text>
-            <Text style={styles.statValue}>{stats.currentStreak}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text>Best Streak:</Text>
-            <Text style={styles.statValue}>{stats.longestStreak}</Text>
-          </View>
-        </Card.Content>
-      </Card>
+          <Text style={styles.headerSub}>
+            {tab.metadata.artist} • {tab.metadata.tempo} BPM
+          </Text>
+        </View>
 
-      {/* Tab Display Placeholder */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title>Tablature</Title>
-          <Paragraph style={styles.placeholder}>
-            Tablature display will appear here
-          </Paragraph>
-          <Paragraph style={styles.note}>
-            (AlphaTab integration coming soon)
-          </Paragraph>
-        </Card.Content>
-      </Card>
+        {/* ===== NOTE DISPLAY ===== */}
+        <Surface style={styles.detectionSurface}>
+          <Text style={styles.detectionLabel}>
+            CURRENT NOTE
+          </Text>
 
-      {/* Control Buttons */}
-      <View style={styles.controls}>
-        {!isListening ? (
-          <Button
-            mode="contained"
-            onPress={handleStartListening}
-            style={styles.button}
-            icon="microphone"
+          <Text
+            style={[
+              styles.detectionText,
+              { color: getFeedbackColor() },
+            ]}
           >
-            Start Listening
+            {currentDetection?.note
+              ? getNoteString(currentDetection.note)
+              : "--"}
+          </Text>
+
+          {currentDetection && (
+            <Text style={styles.frequencyText}>
+              {currentDetection.frequency.toFixed(2)} Hz •{" "}
+              {(currentDetection.confidence * 100).toFixed(0)}%
+            </Text>
+          )}
+        </Surface>
+
+        {/* ===== TABLATURE CANVAS ===== */}
+        <View style={styles.tabSection}>
+          <PracticeTabTimeline tab={tab} windowSize={6} />
+        </View>
+
+        {/* ===== STATS ===== */}
+        <Card style={styles.glassCard}>
+          <Card.Content>
+            <Title style={styles.sectionTitle}>
+              Statistics
+            </Title>
+
+            <Text style={styles.statText}>
+              Accuracy: {stats.averageAccuracy.toFixed(1)}%
+            </Text>
+
+            <ProgressBar
+              progress={stats.averageAccuracy / 100}
+              color={colors.brand.primary}
+              style={styles.progressBar}
+            />
+
+            <View style={styles.statRow}>
+              <Stat
+                label="Correct"
+                value={stats.correctNotes}
+              />
+              <Stat
+                label="Incorrect"
+                value={stats.incorrectNotes}
+              />
+            </View>
+
+            <View style={styles.statRow}>
+              <Stat
+                label="Current"
+                value={stats.currentStreak}
+              />
+              <Stat
+                label="Best"
+                value={stats.longestStreak}
+              />
+            </View>
+          </Card.Content>
+        </Card>
+
+        {/* ===== CONTROLS ===== */}
+        <View style={styles.controls}>
+          {!isListening ? (
+            <Button
+              mode="contained"
+              onPress={handleStartListening}
+              style={styles.primaryBtn}
+              icon="microphone"
+              textColor="#fff"
+            >
+              Start Listening
+            </Button>
+          ) : (
+            <Button
+              mode="contained"
+              onPress={handlePause}
+              style={styles.primaryBtn}
+              icon="pause"
+              textColor="#fff"
+            >
+              Pause
+            </Button>
+          )}
+
+          <Button
+            mode="outlined"
+            onPress={handleQuit}
+            style={styles.secondaryBtn}
+            icon="logout"
+            textColor="#C77DFF"
+          >
+            Quit
           </Button>
-        ) : (
-          <>
-            {!isPaused ? (
-              <Button
-                mode="contained"
-                onPress={handlePause}
-                style={styles.button}
-                icon="pause"
-              >
-                Pause
-              </Button>
-            ) : (
-              <Button
-                mode="contained"
-                onPress={handleResume}
-                style={styles.button}
-                icon="play"
-              >
-                Resume
-              </Button>
-            )}
-          </>
-        )}
-        <Button
-          mode="outlined"
-          onPress={handleEnd}
-          style={styles.button}
-          icon="stop"
-        >
-          End Practice
-        </Button>
-      </View>
-    </View>
+        </View>
+
+      </ScrollView>
+
+    </SafeAreaView>
   );
 }
 
+const Stat = ({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) => (
+  <View style={styles.statBlock}>
+    <Text style={styles.statLabel}>{label}</Text>
+    <Text style={styles.statValue}>{value}</Text>
+  </View>
+);
+
+/* ================================================= */
+/* STYLES */
+/* ================================================= */
+
 const styles = StyleSheet.create({
+
   container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    padding: 16,
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    backgroundColor: colors.bg.main,
   },
-  card: {
-    marginBottom: 16,
-    elevation: 2,
+
+  /* HEADER */
+  headerBar: {
+    paddingVertical: 12,
+    marginBottom: 12,
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(199,125,255,0.25)",
   },
+
+  headerTitle: {
+    color: colors.text.primary,
+    fontSize: 18,
+    fontWeight: "600",
+    letterSpacing: 0.6,
+  },
+
+  headerSub: {
+    marginTop: 2,
+    color: colors.text.subtle,
+    fontSize: 12,
+    letterSpacing: 0.4,
+  },
+
+  /* DETECTION */
   detectionSurface: {
-    padding: 24,
-    marginBottom: 16,
-    elevation: 4,
-    borderRadius: 8,
-    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 22,
+    borderRadius: 16,
+    alignItems: "center",
+    backgroundColor: "rgba(36,0,56,0.65)",
+    borderWidth: 1.5,
+    borderColor: "rgba(199,125,255,0.5)",
+    shadowColor: "#C77DFF",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 14,
   },
+
   detectionLabel: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 8,
+    color: colors.text.subtle,
+    letterSpacing: 1,
+    fontSize: 12,
+    marginBottom: 6,
   },
+
   detectionText: {
-    fontSize: 48,
-    fontWeight: 'bold',
+    fontSize: 54,
+    fontWeight: "800",
   },
+
   frequencyText: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 8,
+    marginTop: 6,
+    color: colors.text.subtle,
   },
+
+  /* TAB */
+  tabSection: {
+    width: "100%",
+    marginVertical: 12,
+    paddingVertical: 6,
+    backgroundColor: "transparent",
+  },
+
+  /* STATS */
+  glassCard: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    marginBottom: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.flow.circleBorder,
+    elevation: 0,
+  },
+
+  sectionTitle: {
+    textAlign: "center",
+    color: colors.text.primary,
+    marginBottom: 10,
+    letterSpacing: 0.4,
+  },
+
+  statText: {
+    textAlign: "center",
+    color: colors.text.primary,
+  },
+
   statRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 10,
   },
+
+  statBlock: {
+    width: "48%",
+    alignItems: "center",
+  },
+
+  statLabel: {
+    fontSize: 12,
+    color: colors.text.subtle,
+  },
+
   statValue: {
-    fontWeight: 'bold',
+    color: colors.text.primary,
+    fontSize: 18,
+    fontWeight: "700",
   },
+
   progressBar: {
-    marginTop: 8,
-    marginBottom: 8,
-    height: 8,
+    marginVertical: 8,
+    height: 6,
     borderRadius: 4,
   },
-  placeholder: {
-    textAlign: 'center',
-    color: '#999',
-    marginTop: 16,
-  },
-  note: {
-    textAlign: 'center',
-    color: '#666',
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 8,
-  },
+
+  /* CONTROLS */
   controls: {
-    marginTop: 'auto',
+    marginTop: 10,
   },
-  button: {
+
+  primaryBtn: {
+    backgroundColor: "#250036",
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: "rgba(199,125,255,0.55)",
+    shadowColor: "#C77DFF",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 14,
+    elevation: 10,
     marginBottom: 12,
   },
+
+  secondaryBtn: {
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: "rgba(199,125,255,0.55)",
+    backgroundColor: "rgba(36,0,56,0.4)",
+  },
+
 });

@@ -19,7 +19,9 @@
       "bundleIdentifier": "com.guitarkaraoke.smarttab",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "SmartTab needs access to your microphone to listen to your guitar playing and provide real-time feedback.",
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -40,7 +42,8 @@
         {
           "microphonePermission": "Allow SmartTab to access your microphone for guitar pitch detection."
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }
