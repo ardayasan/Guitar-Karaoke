@@ -1,18 +1,24 @@
 /**
  * YIN Algorithm for Pitch Detection
- * Based on: "YIN, a fundamental frequency estimator for speech and music"
- * by Alain de Cheveigné and Hideki Kawahara (2002)
+ * Based on: “YIN, a fundamental frequency estimator for speech and music”
+ * by Alain de Cheveigné & Hideki Kawahara (2002)
  *
- * YIN is specifically designed for musical pitch detection and provides
- * better accuracy than FFT-based methods for monophonic signals.
+ * This implementation follows the original method:
+ * 1) Difference function
+ * 2) Cumulative mean normalized difference
+ * 3) Absolute threshold search
+ * 4) Parabolic interpolation
+ *
+ * YIN provides highly accurate monophonic pitch detection and is more robust
+ * than FFT-only approaches, especially for musical instruments.
  */
 
 import { Frequency } from '@/types';
 
 export interface YinResult {
-  frequency: Frequency;
-  confidence: number; // 0-1, higher is better
-  periodicity: number; // How periodic the signal is
+  frequency: Frequency;   // Estimated pitch in Hz
+  confidence: number;     // 0–1, higher means stronger periodicity match
+  periodicity: number;    // Global periodicity measure (clarity of the minimum)
 }
 
 export class YinPitchDetector {
@@ -21,9 +27,10 @@ export class YinPitchDetector {
   private bufferSize: number;
 
   /**
-   * @param sampleRate Audio sample rate in Hz (e.g., 44100)
-   * @param threshold Threshold for detecting pitch (0.1-0.2 is typical)
-   * @param bufferSize Size of analysis buffer (power of 2, e.g., 2048, 4096)
+   * @param sampleRate Input sample rate (e.g., 44100 Hz)
+   * @param threshold Detection threshold for the normalized difference function.
+   *                  Typical values range from 0.1 to 0.2.
+   * @param bufferSize Size of the analysis window, must be a power of two.
    */
   constructor(sampleRate: number, threshold: number = 0.15, bufferSize: number = 2048) {
     this.sampleRate = sampleRate;
@@ -32,38 +39,39 @@ export class YinPitchDetector {
   }
 
   /**
-   * Detect pitch from audio samples
-   * @param samples Audio samples (mono, normalized to -1 to 1)
-   * @returns YinResult with frequency, confidence, and periodicity
+   * Main pitch detection entry.
+   * The algorithm expects a mono Float32Array normalized between -1 and 1.
+   * Returns a YinResult or null when no pitch is found.
    */
   detect(samples: Float32Array): YinResult | null {
+    console.log('[YIN] samples.length:', samples.length,
+            'bufferSize:', this.bufferSize,
+            'sampleRate:', this.sampleRate);
+
     const halfSize = Math.floor(this.bufferSize / 2);
     const yinBuffer = new Float32Array(halfSize);
 
-    // Step 1: Calculate the difference function
+    // Step 1: Compute raw difference function
     this.differenceFunction(samples, yinBuffer);
 
-    // Step 2: Calculate cumulative mean normalized difference function
+    // Step 2: Normalize the difference function
     this.cumulativeMeanNormalizedDifference(yinBuffer);
 
-    // Step 3: Find the absolute threshold
-    const tau = this.absoluteThreshold(yinBuffer);
+    // Step 3: Locate threshold crossing
+    let tau = this.absoluteThreshold(yinBuffer);
 
+    // Fallback: If no threshold crossing exists, use the global minimum.
+    // This is important for low-frequency guitar strings, where dips may be shallow.
     if (tau === -1) {
-      // No pitch detected
-      return null;
+      tau = this.findGlobalMinimum(yinBuffer);
+      if (tau === -1) return null;
     }
 
-    // Step 4: Parabolic interpolation for better accuracy
+    // Step 4: Improve accuracy via parabolic interpolation
     const betterTau = this.parabolicInterpolation(yinBuffer, tau);
 
-    // Calculate frequency
     const frequency = this.sampleRate / betterTau;
-
-    // Calculate confidence (inverse of the YIN value at tau)
-    const confidence = 1 - yinBuffer[tau];
-
-    // Calculate periodicity (how regular/periodic the signal is)
+    const confidence = Math.max(0, 1 - yinBuffer[tau]);
     const periodicity = this.calculatePeriodicity(yinBuffer);
 
     return {
@@ -74,10 +82,17 @@ export class YinPitchDetector {
   }
 
   /**
-   * Step 1: Difference function
-   * Calculates the squared difference between signal and its delayed version
+   * Step 1: Difference Function
+   * Computes the squared distance between samples and their delayed version.
+   * This reveals repetitive structure in the signal.
    */
   private differenceFunction(samples: Float32Array, yinBuffer: Float32Array): void {
+    console.log(
+      '[DIFF] tau=400', yinBuffer[400],
+      '| tau=500', yinBuffer[500],
+      '| tau=600', yinBuffer[600]
+    );
+
     const halfSize = yinBuffer.length;
 
     for (let tau = 0; tau < halfSize; tau++) {
@@ -91,8 +106,28 @@ export class YinPitchDetector {
   }
 
   /**
-   * Step 2: Cumulative mean normalized difference function
-   * Normalizes the difference function to make threshold independent of amplitude
+   * If no threshold crossing is found, we select the global minimum of the
+   * normalized difference function. This ensures detection still works for
+   * very periodic but shallow-dip signals.
+   */
+  private findGlobalMinimum(yinBuffer: Float32Array) {
+    let min = Infinity;
+    let idx = -1;
+
+    for (let i = 2; i < yinBuffer.length; i++) {
+      if (yinBuffer[i] < min) {
+        min = yinBuffer[i];
+        idx = i;
+      }
+    }
+
+    return idx;
+  }
+
+  /**
+   * Step 2: Cumulative Mean Normalized Difference Function (CMND)
+   * Converts raw difference into a normalized form independent of amplitude.
+   * Small values in CMND indicate strong periodicity.
    */
   private cumulativeMeanNormalizedDifference(yinBuffer: Float32Array): void {
     yinBuffer[0] = 1;
@@ -102,40 +137,54 @@ export class YinPitchDetector {
       runningSum += yinBuffer[tau];
       yinBuffer[tau] *= tau / runningSum;
     }
+
+    // Debug: log global minimum of normalized difference
+    let normMin = 1;
+    let minTau = -1;
+
+    for (let t = 1; t < yinBuffer.length; t++) {
+      if (yinBuffer[t] < normMin) {
+        normMin = yinBuffer[t];
+        minTau = t;
+      }
+    }
+
+    console.log('[NORM MIN] value:', normMin, 'at tau:', minTau);
   }
 
   /**
-   * Step 3: Absolute threshold
-   * Finds the smallest tau where the function drops below threshold
+   * Step 3: Absolute Threshold Search
+   * Finds the first τ where CMND falls below the threshold.
+   * A deeper dip indicates a more stable fundamental frequency.
    */
   private absoluteThreshold(yinBuffer: Float32Array): number {
-    // Start from tau=2 to avoid detecting very high frequencies
-    // (tau=1 would be half the sample rate)
-    const minTau = Math.floor(this.sampleRate / 1500); // Max ~1500 Hz
-    const maxTau = Math.floor(this.sampleRate / 60);   // Min ~60 Hz
+    const minTau = Math.floor(this.sampleRate / 1500); // Upper frequency limit (~1500 Hz)
+    const maxTau = Math.floor(this.sampleRate / 40);   // Lower frequency limit (~40 Hz)
 
-    // Clamp search range
     const startTau = Math.max(2, minTau);
     const endTau = Math.min(yinBuffer.length - 1, maxTau);
 
     for (let tau = startTau; tau < endTau; tau++) {
       if (yinBuffer[tau] < this.threshold) {
-        // Found a point below threshold
-        // Now find the local minimum in this dip
+        // Local minimum refinement: move forward while still descending
         while (tau + 1 < endTau && yinBuffer[tau + 1] < yinBuffer[tau]) {
           tau++;
         }
         return tau;
       }
+
+      if (tau % 100 === 0) {
+        console.log('[THRESH SWEEP]', tau, '→', yinBuffer[tau]);
+      }
     }
 
-    // No pitch detected - return -1
+    console.log('[THRESH RESULT]', 'NO TAU FOUND');
     return -1;
   }
 
   /**
-   * Step 4: Parabolic interpolation
-   * Improves frequency accuracy by interpolating around the minimum
+   * Step 4: Parabolic Interpolation
+   * Refines the integer τ estimate to a fractional value, improving pitch accuracy.
    */
   private parabolicInterpolation(yinBuffer: Float32Array, tau: number): number {
     if (tau === 0 || tau === yinBuffer.length - 1) {
@@ -146,15 +195,13 @@ export class YinPitchDetector {
     const s1 = yinBuffer[tau];
     const s2 = yinBuffer[tau + 1];
 
-    // Parabolic interpolation formula
     const adjustment = (s2 - s0) / (2 * (2 * s1 - s2 - s0));
-
     return tau + adjustment;
   }
 
   /**
-   * Calculate how periodic/regular the signal is
-   * Based on the clarity of the YIN minimum
+   * Computes a global periodicity metric by taking the strongest dip in CMND.
+   * Lower CMND → higher periodicity → clearer pitch.
    */
   private calculatePeriodicity(yinBuffer: Float32Array): number {
     let minValue = 1;
@@ -163,14 +210,10 @@ export class YinPitchDetector {
         minValue = yinBuffer[i];
       }
     }
-
-    // Return inverse - lower YIN value means more periodic
     return 1 - minValue;
   }
 
-  /**
-   * Update detector parameters
-   */
+  /** Runtime parameter updates **/
   setThreshold(threshold: number): void {
     this.threshold = threshold;
   }
@@ -185,8 +228,7 @@ export class YinPitchDetector {
 }
 
 /**
- * Simple pitch detection using YIN
- * Convenience function for one-off detections
+ * Convenience function for one-shot pitch detection.
  */
 export function detectPitch(
   samples: Float32Array,
@@ -198,8 +240,8 @@ export function detectPitch(
 }
 
 /**
- * Filter for smoothing pitch detections over time
- * Helps reduce jitter in real-time pitch tracking
+ * Pitch smoothing filter: stabilizes YIN output across multiple frames.
+ * Useful for real-time guitar tuning/practice, reducing jitter and false positives.
  */
 export class PitchSmoothingFilter {
   private history: YinResult[] = [];
@@ -210,35 +252,47 @@ export class PitchSmoothingFilter {
   }
 
   /**
-   * Add a new pitch detection result and get smoothed output
+   * Adds a new YIN result and outputs a smoothed estimate.
+   * Uses weighted averaging, favoring more recent frames.
    */
   addResult(result: YinResult | null): YinResult | null {
+    // If no pitch detected: clear history
     if (result === null) {
-      // Clear history if no pitch detected
       this.history = [];
       return null;
     }
 
+    // Confidence gate: ignore weak detections
+    if (result.confidence < 0.75) {
+      return null;
+    }
+
+    // Ignore first detection to avoid transient instability
+    if (this.history.length === 0) {
+      this.history.push(result);
+      return null;
+    }
+
+    // Add to smoothing history
     this.history.push(result);
 
-    // Keep only recent history
+    // Only output once the buffer is full
+    if (this.history.length < this.maxHistory) {
+      return null;
+    }
+
     if (this.history.length > this.maxHistory) {
       this.history.shift();
     }
 
-    // Need at least 2 samples to smooth
-    if (this.history.length < 2) {
-      return result;
-    }
-
-    // Weighted average - more recent results weighted higher
+    // Weighted smoothing (newer frames get higher weight)
     let sumFreq = 0;
     let sumConfidence = 0;
     let sumPeriodicity = 0;
     let totalWeight = 0;
 
     this.history.forEach((res, index) => {
-      const weight = index + 1; // Linear weighting
+      const weight = index + 1;
       sumFreq += res.frequency * weight;
       sumConfidence += res.confidence * weight;
       sumPeriodicity += res.periodicity * weight;
@@ -252,9 +306,7 @@ export class PitchSmoothingFilter {
     };
   }
 
-  /**
-   * Clear the smoothing history
-   */
+  /** Clears smoothing buffer */
   reset(): void {
     this.history = [];
   }

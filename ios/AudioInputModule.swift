@@ -45,8 +45,8 @@ class AudioInputModule: RCTEventEmitter {
 
     // Install Tap (real PCM stream)
     input.installTap(onBus: 0,
-                     bufferSize: 2048,
-                     format: format) { buffer, when in
+                      bufferSize: 2048,
+                      format: format) { buffer, when in
       self.handleBuffer(buffer: buffer)
     }
 
@@ -79,22 +79,25 @@ class AudioInputModule: RCTEventEmitter {
     print("[NativeAudio] Audio engine stopped.")
   }
 
-    private func handleBuffer(buffer: AVAudioPCMBuffer) {
-        guard let channelData = buffer.floatChannelData?[0] else {
-            print("[NativeAudio] No channel data")
-            return
-        }
-
-        let frameLength = Int(buffer.frameLength)
-
-        // Float32 array oluşturuyoruz
-        let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
-
-        // JS tarafına event gönder
-        self.sendEvent(withName: "AudioSamples", body: [
-            "samples": samples,
-            "length": frameLength,
-            "timestamp": Date().timeIntervalSince1970
-        ])
+private func handleBuffer(buffer: AVAudioPCMBuffer) {
+    guard let channelData = buffer.floatChannelData?[0] else {
+        print("[NativeAudio] No channel data")
+        return
     }
+
+    let frameLength = Int(buffer.frameLength)
+
+    let samples = Array(
+      UnsafeBufferPointer(start: channelData, count: frameLength)
+    )
+
+    let sampleRate = buffer.format.sampleRate
+
+    self.sendEvent(withName: "AudioSamples", body: [
+        "samples": samples,
+        "length": frameLength,
+        "timestamp": Date().timeIntervalSince1970,
+        "sampleRate": sampleRate
+    ])
+}
 }

@@ -1,10 +1,10 @@
 /**
  * Practice Screen
- * Main practice interface with real-time pitch detection and feedback
- * — SmartTab FINAL STABLE HUD (SCROLL FIXED)
+ * Main UI for real-time pitch detection and feedback.
+ * Uses AudioPipeline for audio streaming + pitch processing.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -21,12 +21,10 @@ import { StackNavigationProp } from "@react-navigation/stack";
 
 import { RootStackParamList } from "@/navigation/types";
 import { usePracticeStore } from "@/store";
-import { getPitchDetectionService } from "@/services/pitch";
-import { startNativeAudio } from "@/services/native/nativeAudio";
 import { getNoteString } from "@/utils/music";
-
 import colors from "@/theme/colors";
 import PracticeTabTimeline from "./components/PracticeTabTimeline";
+import { AudioPipeline } from "@/services/audio/AudioPipeline";
 
 /* ================================================= */
 
@@ -38,9 +36,11 @@ type PracticeScreenNavigationProp =
 
 export default function PracticeScreen() {
   const route = useRoute<PracticeScreenRouteProp>();
-  const navigation =
-    useNavigation<PracticeScreenNavigationProp>();
+  const navigation = useNavigation<PracticeScreenNavigationProp>();
   const tab = route.params.tab;
+
+  // Audio pipeline instance (created once)
+  const pipeline = useMemo(() => new AudioPipeline(), []);
 
   const {
     stats,
@@ -53,41 +53,30 @@ export default function PracticeScreen() {
     reset,
   } = usePracticeStore();
 
-  const [pitchService] = useState(() =>
-    getPitchDetectionService()
-  );
   const [isListening, setIsListening] = useState(false);
-  const [stopNativeAudio, setStopNativeAudio] =
-    useState<null | (() => void)>(null);
 
-  /* ===== INIT ===== */
+  /* ---------------------- INIT + CLEANUP ---------------------- */
   useEffect(() => {
     startSession();
 
     return () => {
-      if (stopNativeAudio) stopNativeAudio();
+      pipeline.stop();
       reset();
     };
   }, []);
 
-  /* ===== AUDIO ===== */
-  const handleStartListening = () => {
-    pitchService.start((detection) =>
-      setCurrentDetection(detection ?? null)
-    );
+  /* ---------------------- AUDIO CONTROLS ---------------------- */
 
-    const stop = startNativeAudio((samples, ts) => {
-      pitchService.processSamples(samples, ts);
+  const handleStartListening = () => {
+    pipeline.start((detection) => {
+      setCurrentDetection(detection ?? null);
     });
 
-    setStopNativeAudio(() => stop);
     setIsListening(true);
   };
 
   const handleStopListening = () => {
-    pitchService.stop();
-    if (stopNativeAudio) stopNativeAudio();
-    setStopNativeAudio(null);
+    pipeline.stop();
     setIsListening(false);
   };
 
@@ -97,12 +86,13 @@ export default function PracticeScreen() {
   };
 
   const handleQuit = () => {
-    if (isListening) handleStopListening();
+    if (isListening) pipeline.stop();
     endSession();
     navigation.goBack();
   };
 
-  /* ===== FEEDBACK COLOR ===== */
+  /* ---------------------- FEEDBACK COLOR ---------------------- */
+
   const getFeedbackColor = () => {
     if (!currentFeedback) return colors.text.subtle;
 
@@ -118,33 +108,28 @@ export default function PracticeScreen() {
     }
   };
 
+  /* ---------------------- RENDER ---------------------- */
+
   return (
     <SafeAreaView
       style={{ flex: 1, backgroundColor: colors.bg.main }}
       edges={["top"]}
     >
-
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-
-        {/* ===== HUD HEADER BAR ===== */}
+        {/* HEADER */}
         <View style={styles.headerBar}>
-          <Text style={styles.headerTitle}>
-            {tab.metadata.title}
-          </Text>
-
+          <Text style={styles.headerTitle}>{tab.metadata.title}</Text>
           <Text style={styles.headerSub}>
             {tab.metadata.artist} • {tab.metadata.tempo} BPM
           </Text>
         </View>
 
-        {/* ===== NOTE DISPLAY ===== */}
+        {/* CURRENT NOTE DISPLAY */}
         <Surface style={styles.detectionSurface}>
-          <Text style={styles.detectionLabel}>
-            CURRENT NOTE
-          </Text>
+          <Text style={styles.detectionLabel}>CURRENT NOTE</Text>
 
           <Text
             style={[
@@ -165,17 +150,15 @@ export default function PracticeScreen() {
           )}
         </Surface>
 
-        {/* ===== TABLATURE CANVAS ===== */}
+        {/* TAB TIMELINE */}
         <View style={styles.tabSection}>
           <PracticeTabTimeline tab={tab} windowSize={6} />
         </View>
 
-        {/* ===== STATS ===== */}
+        {/* STATS */}
         <Card style={styles.glassCard}>
           <Card.Content>
-            <Title style={styles.sectionTitle}>
-              Statistics
-            </Title>
+            <Title style={styles.sectionTitle}>Statistics</Title>
 
             <Text style={styles.statText}>
               Accuracy: {stats.averageAccuracy.toFixed(1)}%
@@ -188,30 +171,18 @@ export default function PracticeScreen() {
             />
 
             <View style={styles.statRow}>
-              <Stat
-                label="Correct"
-                value={stats.correctNotes}
-              />
-              <Stat
-                label="Incorrect"
-                value={stats.incorrectNotes}
-              />
+              <Stat label="Correct" value={stats.correctNotes} />
+              <Stat label="Incorrect" value={stats.incorrectNotes} />
             </View>
 
             <View style={styles.statRow}>
-              <Stat
-                label="Current"
-                value={stats.currentStreak}
-              />
-              <Stat
-                label="Best"
-                value={stats.longestStreak}
-              />
+              <Stat label="Current" value={stats.currentStreak} />
+              <Stat label="Best" value={stats.longestStreak} />
             </View>
           </Card.Content>
         </Card>
 
-        {/* ===== CONTROLS ===== */}
+        {/* CONTROLS */}
         <View style={styles.controls}>
           {!isListening ? (
             <Button
@@ -245,12 +216,12 @@ export default function PracticeScreen() {
             Quit
           </Button>
         </View>
-
       </ScrollView>
-
     </SafeAreaView>
   );
 }
+
+/* ---------------------- STAT SUBCOMPONENT ---------------------- */
 
 const Stat = ({
   label,
@@ -270,7 +241,6 @@ const Stat = ({
 /* ================================================= */
 
 const styles = StyleSheet.create({
-
   container: {
     flexGrow: 1,
     paddingHorizontal: 16,
@@ -278,7 +248,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.main,
   },
 
-  /* HEADER */
   headerBar: {
     paddingVertical: 12,
     marginBottom: 12,
@@ -301,7 +270,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
 
-  /* DETECTION */
   detectionSurface: {
     marginBottom: 12,
     paddingVertical: 22,
@@ -333,7 +301,6 @@ const styles = StyleSheet.create({
     color: colors.text.subtle,
   },
 
-  /* TAB */
   tabSection: {
     width: "100%",
     marginVertical: 12,
@@ -341,7 +308,6 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
 
-  /* STATS */
   glassCard: {
     backgroundColor: "rgba(255,255,255,0.04)",
     marginBottom: 14,
@@ -391,7 +357,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 
-  /* CONTROLS */
   controls: {
     marginTop: 10,
   },
@@ -415,5 +380,4 @@ const styles = StyleSheet.create({
     borderColor: "rgba(199,125,255,0.55)",
     backgroundColor: "rgba(36,0,56,0.4)",
   },
-
 });

@@ -8,6 +8,7 @@ import LibraryScreen from '@/screens/library/LibraryScreen';
 import PracticeScreen from '@/screens/practice/PracticeScreen';
 import SettingsScreen from '@/screens/settings/SettingsScreen';
 import InformationScreen from '@/screens/information/InformationScreen';
+import TestScreen from '@/screens/test/TestScreen';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -74,6 +75,15 @@ export default function AppNavigator() {
           component={InformationScreen}
           options={{
             title: 'About SmartTab',
+            headerBackTitle: "Home"
+          }}
+        />
+
+        <Stack.Screen
+          name="TestScreen"
+          component={TestScreen}
+          options={{
+            title: 'TEST SCREEN',
             headerBackTitle: "Home"
           }}
         />
