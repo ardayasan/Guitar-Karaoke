@@ -67,6 +67,10 @@ export class PitchDetectionService {
   // for debugging
   private hasActiveSignal = false;
 
+  // Onset counter: Discards the first signals (actually they are garbage). Waits for the true tone.
+  private onsetFramesToSkip = 1;
+  private onsetCounter = 0;
+
 
   constructor(config: PitchDetectionConfig = DEFAULT_PITCH_CONFIG) {
     this.config = config;
@@ -132,6 +136,7 @@ export class PitchDetectionService {
     if (amplitude < MIN_AMPLITUDE) {
       if (this.hasActiveSignal) {
         debugLog('[AMP] signal lost → silence');
+        this.onsetCounter = this.onsetFramesToSkip;
         this.hasActiveSignal = false;
       }
       this.detectionCallback?.(null);
@@ -148,6 +153,12 @@ export class PitchDetectionService {
      * STEP 1 — Apply Hann window (reduces spectral leakage)
      */
     const windowed = applyHannWindow(buffer); // we will use this for fft (chord detection)
+
+    if (this.onsetCounter > 0) {
+      this.onsetCounter--;
+      this.detectionCallback?.(null);
+      return null;
+    }
 
     /**
      * STEP 2 — Primary algorithm: YIN
@@ -197,7 +208,8 @@ export class PitchDetectionService {
      * STEP 4 — Multi-frame smoothing
      * Stabilizes rapid fluctuations and eliminates jitter.
      */
-    const smoothed = this.smoothingFilter.addResult(yinResult);
+    // const smoothed = this.smoothingFilter.addResult(yinResult); -> smoothing unactivated
+    const smoothed = yinResult;
 
     if (!smoothed) {
       console.log('[SMOOTH] buffering / not ready'); // LOG
