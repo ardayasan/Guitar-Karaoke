@@ -42,6 +42,16 @@ export const DEFAULT_PITCH_CONFIG: PitchDetectionConfig = {
 
 export type PitchDetectionCallback = (d: AudioDetection | null) => void;
 
+
+// debug flags and function
+const DEBUG_PITCH = true; // true in test, false in prod
+
+function debugLog(...args: any[]) {
+  if (DEBUG_PITCH) {
+    console.log(...args);
+  }
+}
+
 export class PitchDetectionService {
   private config: PitchDetectionConfig;
 
@@ -53,6 +63,10 @@ export class PitchDetectionService {
   // Runtime state
   private detectionCallback: PitchDetectionCallback | null = null;
   private isActive = false;
+
+  // for debugging
+  private hasActiveSignal = false;
+
 
   constructor(config: PitchDetectionConfig = DEFAULT_PITCH_CONFIG) {
     this.config = config;
@@ -114,20 +128,43 @@ export class PitchDetectionService {
     const amplitude = this.calculateRMS(buffer);
     const MIN_AMPLITUDE = 0.003;
 
+    // There is not any voice signal
     if (amplitude < MIN_AMPLITUDE) {
+      if (this.hasActiveSignal) {
+        debugLog('[AMP] signal lost → silence');
+        this.hasActiveSignal = false;
+      }
       this.detectionCallback?.(null);
       return null;
+    }
+
+    // There is voice signal
+    if (!this.hasActiveSignal) {
+      debugLog('[AMP] signal detected → processing starts');
+      this.hasActiveSignal = true;
     }
 
     /**
      * STEP 1 — Apply Hann window (reduces spectral leakage)
      */
-    const windowed = applyHannWindow(buffer);
+    const windowed = applyHannWindow(buffer); // we will use this for fft (chord detection)
 
     /**
      * STEP 2 — Primary algorithm: YIN
      */
-    let yinResult = this.yinDetector.detect(windowed);
+    let yinResult = this.yinDetector.detect(buffer);
+
+    // LOG
+    if (yinResult) {
+      debugLog(
+      '[YIN]',
+      'freq:', yinResult.frequency.toFixed(2),
+      'conf:', yinResult.confidence.toFixed(3),
+      'per:', yinResult.periodicity?.toFixed(3)
+    );
+    } else {
+      debugLog('[YIN] null');
+    }
 
     /**
      * STEP 3 — Fallback for low strings (E2, A2)
@@ -137,6 +174,13 @@ export class PitchDetectionService {
     if (!yinResult) {
       const fallback = this.estimateFrequencyZeroCrossing(windowed, this.config.sampleRate);
 
+      // LOG
+      if (fallback) {
+        console.log('[ZC]', 'fallback freq:', fallback.toFixed(2));
+      } else {
+        console.log('[ZC] null');
+      }
+
       if (!fallback) {
         this.detectionCallback?.(null);
         return null;
@@ -144,7 +188,7 @@ export class PitchDetectionService {
 
       yinResult = {
         frequency: fallback,
-        confidence: 0.85, // high on purpose so smoothing can work with it
+        confidence: 0.85,
         periodicity: 0.5,
       };
     }
@@ -156,9 +200,18 @@ export class PitchDetectionService {
     const smoothed = this.smoothingFilter.addResult(yinResult);
 
     if (!smoothed) {
+      console.log('[SMOOTH] buffering / not ready'); // LOG
       this.detectionCallback?.(null);
       return null;
     }
+
+    // LOG
+    console.log(
+      '[SMOOTH]',
+      'freq:', smoothed.frequency.toFixed(2),
+      'conf:', smoothed.confidence.toFixed(3)
+    );
+
 
     /**
      * STEP 5 — Confidence gating
@@ -168,6 +221,11 @@ export class PitchDetectionService {
     const minConf = isLow ? 0.5 : this.config.minConfidence;
 
     if (smoothed.confidence < minConf) {
+      console.log(
+        '[CONF] gated',
+        'conf:', smoothed.confidence.toFixed(3),
+        'min:', minConf
+      );
       this.detectionCallback?.(null);
       return null;
     }
@@ -179,6 +237,14 @@ export class PitchDetectionService {
       smoothed.frequency < this.config.minFrequency ||
       smoothed.frequency > this.config.maxFrequency
     ) {
+      console.log(
+      '[RANGE] gated',
+      'freq:', smoothed.frequency.toFixed(2),
+      'range:',
+      this.config.minFrequency,
+      '-',
+      this.config.maxFrequency
+    );
       this.detectionCallback?.(null);
       return null;
     }

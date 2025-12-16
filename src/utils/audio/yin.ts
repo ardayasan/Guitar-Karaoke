@@ -15,6 +15,16 @@
 
 import { Frequency } from '@/types';
 
+
+const DEBUG_YIN = true;
+const DEBUG_YIN_INTERNAL = false;
+
+function yinDebug(enabled: boolean, ...args: any[]) {
+  if (enabled) {
+    console.log(...args);
+  }
+}
+
 export interface YinResult {
   frequency: Frequency;   // Estimated pitch in Hz
   confidence: number;     // 0–1, higher means stronger periodicity match
@@ -38,15 +48,23 @@ export class YinPitchDetector {
     this.bufferSize = bufferSize;
   }
 
+  
+
   /**
    * Main pitch detection entry.
    * The algorithm expects a mono Float32Array normalized between -1 and 1.
    * Returns a YinResult or null when no pitch is found.
    */
   detect(samples: Float32Array): YinResult | null {
-    console.log('[YIN] samples.length:', samples.length,
-            'bufferSize:', this.bufferSize,
-            'sampleRate:', this.sampleRate);
+    yinDebug(
+    DEBUG_YIN,
+    '[YIN] samples.length:',
+    samples.length,
+    'bufferSize:',
+    this.bufferSize,
+    'sampleRate:',
+    this.sampleRate
+  );
 
     const halfSize = Math.floor(this.bufferSize / 2);
     const yinBuffer = new Float32Array(halfSize);
@@ -87,11 +105,13 @@ export class YinPitchDetector {
    * This reveals repetitive structure in the signal.
    */
   private differenceFunction(samples: Float32Array, yinBuffer: Float32Array): void {
-    console.log(
+    yinDebug(
+      DEBUG_YIN_INTERNAL,
       '[DIFF] tau=400', yinBuffer[400],
       '| tau=500', yinBuffer[500],
       '| tau=600', yinBuffer[600]
     );
+
 
     const halfSize = yinBuffer.length;
 
@@ -149,7 +169,13 @@ export class YinPitchDetector {
       }
     }
 
-    console.log('[NORM MIN] value:', normMin, 'at tau:', minTau);
+    yinDebug(
+      DEBUG_YIN_INTERNAL,
+      '[NORM MIN] value:',
+      normMin,
+      'at tau:',
+      minTau
+    );
   }
 
   /**
@@ -174,11 +200,23 @@ export class YinPitchDetector {
       }
 
       if (tau % 100 === 0) {
-        console.log('[THRESH SWEEP]', tau, '→', yinBuffer[tau]);
+        if (tau % 100 === 0) {
+          yinDebug(
+            DEBUG_YIN_INTERNAL,
+            '[THRESH SWEEP]',
+            tau,
+            '→',
+            yinBuffer[tau]
+          );
+        }
       }
     }
 
-    console.log('[THRESH RESULT]', 'NO TAU FOUND');
+    yinDebug(
+      DEBUG_YIN_INTERNAL,
+      '[THRESH RESULT]',
+      'NO TAU FOUND'
+    );
     return -1;
   }
 

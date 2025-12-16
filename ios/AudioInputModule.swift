@@ -45,7 +45,7 @@ class AudioInputModule: RCTEventEmitter {
 
     // Install Tap (real PCM stream)
     input.installTap(onBus: 0,
-                      bufferSize: 2048,
+                      bufferSize: 8192,
                       format: format) { buffer, when in
       self.handleBuffer(buffer: buffer)
     }
