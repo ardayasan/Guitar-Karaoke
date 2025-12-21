@@ -3,26 +3,28 @@
  * --------------------------------------------------------
  * Central real-time DSP engine that performs:
  *   - YIN fundamental frequency estimation
- *   - RMS amplitude gating (noise filtering)
- *   - Hann windowing
  *   - Zero-crossing fallback (helps on low strings)
- *   - Multi-frame smoothing for stability
+ *   - Confidence gating
+ *   - Frequency range validation
+ *   - Frequency → musical note conversion
  *
- * This service contains NO audio I/O.
- * It only processes Float32Array buffers and detects pitch.
+ * IMPORTANT:
+ * This service contains NO audio I/O and NO onset / silence detection.
+ * It assumes:
+ *   - Input buffers are already gated and aligned by the native layer
+ *   - Buffers are fixed-size NOTE windows (e.g. 2048 samples)
  */
 
-import { YinPitchDetector, PitchSmoothingFilter } from '@/utils/audio/yin';
+import { YinPitchDetector } from '@/utils/audio/yin';
 import { FFT, applyHannWindow } from '@/utils/audio/fft';
 import { frequencyToNote, GUITAR_FREQUENCY_RANGE } from '@/utils/music';
 import { AudioDetection } from '@/types';
 
 export interface PitchDetectionConfig {
   sampleRate: number;
-  bufferSize: number;
+  bufferSize: number;      // NOTE window size (native guarantees this)
   yinThreshold: number;
   minConfidence: number;
-  smoothingWindow: number;
   minFrequency: number;
   maxFrequency: number;
 }
@@ -32,19 +34,17 @@ export interface PitchDetectionConfig {
  */
 export const DEFAULT_PITCH_CONFIG: PitchDetectionConfig = {
   sampleRate: 44100,
-  bufferSize: 2048,
+  bufferSize: 2048,                 // NOTE window (native side)
   yinThreshold: 0.15,
   minConfidence: 0.6,
-  smoothingWindow: 3,
-  minFrequency: GUITAR_FREQUENCY_RANGE.MIN - 10,  // a small margin below E2
-  maxFrequency: GUITAR_FREQUENCY_RANGE.MAX + 100, // margin for high frets
+  minFrequency: GUITAR_FREQUENCY_RANGE.MIN - 10,  // margin below E2
+  maxFrequency: GUITAR_FREQUENCY_RANGE.MAX + 100, // margin above high frets
 };
 
 export type PitchDetectionCallback = (d: AudioDetection | null) => void;
 
-
-// debug flags and function
-const DEBUG_PITCH = true; // true in test, false in prod
+// Debug flag
+const DEBUG_PITCH = true;
 
 function debugLog(...args: any[]) {
   if (DEBUG_PITCH) {
@@ -57,20 +57,11 @@ export class PitchDetectionService {
 
   // Core DSP tools
   private yinDetector: YinPitchDetector;
-  private fft: FFT;                  // currently unused in main pipeline but kept for future chord/FFT features
-  private smoothingFilter: PitchSmoothingFilter;
+  private fft: FFT; // reserved for future chord detection
 
   // Runtime state
   private detectionCallback: PitchDetectionCallback | null = null;
   private isActive = false;
-
-  // for debugging
-  private hasActiveSignal = false;
-
-  // Onset counter: Discards the first signals (actually they are garbage). Waits for the true tone.
-  private onsetFramesToSkip = 1;
-  private onsetCounter = 0;
-
 
   constructor(config: PitchDetectionConfig = DEFAULT_PITCH_CONFIG) {
     this.config = config;
@@ -82,115 +73,68 @@ export class PitchDetectionService {
     );
 
     this.fft = new FFT(config.bufferSize);
-    this.smoothingFilter = new PitchSmoothingFilter(config.smoothingWindow);
   }
 
   /**
    * Activates pitch detection.
-   * A callback receives real-time detection results.
+   * The service expects already-gated NOTE windows from the pipeline.
    */
   start(callback: PitchDetectionCallback): void {
     this.detectionCallback = callback;
     this.isActive = true;
-
-    this.smoothingFilter.reset();
-
     console.log('[PitchDetection] started');
   }
 
   /**
-   * Deactivates detection and clears callbacks/state.
+   * Deactivates detection.
    */
   stop(): void {
     this.isActive = false;
     this.detectionCallback = null;
-
-    this.smoothingFilter.reset();
-
     console.log('[PitchDetection] stopped');
   }
 
   /**
    * Main processing entry point.
-   * Consumes a PCM frame and attempts to detect pitch.
+   * Consumes a NOTE-sized PCM frame and attempts to detect pitch.
    */
   processSamples(samples: Float32Array, timestampMs: number): AudioDetection | null {
-    if (!this.isActive || samples.length < this.config.bufferSize) {
-      return null;
-    }
+    if (!this.isActive) return null;
 
-    // Always operate on a fixed-size buffer
-    const buffer =
-      samples.length === this.config.bufferSize
-        ? samples
-        : samples.slice(0, this.config.bufferSize);
+    // Native guarantees correct NOTE window size
+    const buffer = samples;
 
     /**
-     * STEP 0 — Amplitude gate
-     * Removes noise and near-silence before running heavier algorithms.
+     * STEP 1 — (Optional) Windowing
+     * Hann window is applied for spectral consistency and future FFT usage.
      */
-    const amplitude = this.calculateRMS(buffer);
-    const MIN_AMPLITUDE = 0.003;
-
-    // There is not any voice signal
-    if (amplitude < MIN_AMPLITUDE) {
-      if (this.hasActiveSignal) {
-        debugLog('[AMP] signal lost → silence');
-        this.onsetCounter = this.onsetFramesToSkip;
-        this.hasActiveSignal = false;
-      }
-      this.detectionCallback?.(null);
-      return null;
-    }
-
-    // There is voice signal
-    if (!this.hasActiveSignal) {
-      debugLog('[AMP] signal detected → processing starts');
-      this.hasActiveSignal = true;
-    }
-
-    /**
-     * STEP 1 — Apply Hann window (reduces spectral leakage)
-     */
-    const windowed = applyHannWindow(buffer); // we will use this for fft (chord detection)
-
-    if (this.onsetCounter > 0) {
-      this.onsetCounter--;
-      this.detectionCallback?.(null);
-      return null;
-    }
+    const windowed = applyHannWindow(buffer);
 
     /**
      * STEP 2 — Primary algorithm: YIN
      */
     let yinResult = this.yinDetector.detect(buffer);
 
-    // LOG
     if (yinResult) {
       debugLog(
-      '[YIN]',
-      'freq:', yinResult.frequency.toFixed(2),
-      'conf:', yinResult.confidence.toFixed(3),
-      'per:', yinResult.periodicity?.toFixed(3)
-    );
+        '[YIN]',
+        'freq:', yinResult.frequency.toFixed(2),
+        'conf:', yinResult.confidence.toFixed(3),
+        'per:', yinResult.periodicity?.toFixed(3)
+      );
     } else {
       debugLog('[YIN] null');
     }
 
     /**
      * STEP 3 — Fallback for low strings (E2, A2)
-     * Zero-crossing gives a rough but usable frequency estimate
-     * when YIN returns null on weak harmonics.
+     * Zero-crossing gives a rough but usable frequency estimate.
      */
     if (!yinResult) {
-      const fallback = this.estimateFrequencyZeroCrossing(windowed, this.config.sampleRate);
-
-      // LOG
-      if (fallback) {
-        console.log('[ZC]', 'fallback freq:', fallback.toFixed(2));
-      } else {
-        console.log('[ZC] null');
-      }
+      const fallback = this.estimateFrequencyZeroCrossing(
+        windowed,
+        this.config.sampleRate
+      );
 
       if (!fallback) {
         this.detectionCallback?.(null);
@@ -205,88 +149,61 @@ export class PitchDetectionService {
     }
 
     /**
-     * STEP 4 — Multi-frame smoothing
-     * Stabilizes rapid fluctuations and eliminates jitter.
+     * STEP 4 — Confidence gating
+     * Low notes are allowed slightly weaker confidence.
      */
-    // const smoothed = this.smoothingFilter.addResult(yinResult); -> smoothing unactivated
-    const smoothed = yinResult;
-
-    if (!smoothed) {
-      console.log('[SMOOTH] buffering / not ready'); // LOG
-      this.detectionCallback?.(null);
-      return null;
-    }
-
-    // LOG
-    console.log(
-      '[SMOOTH]',
-      'freq:', smoothed.frequency.toFixed(2),
-      'conf:', smoothed.confidence.toFixed(3)
-    );
-
-
-    /**
-     * STEP 5 — Confidence gating
-     * Dynamic threshold: low notes are allowed slightly weaker confidence.
-     */
-    const isLow = smoothed.frequency < 110; // E2–D3 region
+    const isLow = yinResult.frequency < 110; // E2–D3 region
     const minConf = isLow ? 0.5 : this.config.minConfidence;
 
-    if (smoothed.confidence < minConf) {
-      console.log(
-        '[CONF] gated',
-        'conf:', smoothed.confidence.toFixed(3),
-        'min:', minConf
-      );
+    if (yinResult.confidence < minConf) {
+      debugLog('[CONF] gated', yinResult.confidence.toFixed(3));
       this.detectionCallback?.(null);
       return null;
     }
 
     /**
-     * STEP 6 — Expected frequency range check
+     * STEP 5 — Expected frequency range check
      */
     if (
-      smoothed.frequency < this.config.minFrequency ||
-      smoothed.frequency > this.config.maxFrequency
+      yinResult.frequency < this.config.minFrequency ||
+      yinResult.frequency > this.config.maxFrequency
     ) {
-      console.log(
-      '[RANGE] gated',
-      'freq:', smoothed.frequency.toFixed(2),
-      'range:',
-      this.config.minFrequency,
-      '-',
-      this.config.maxFrequency
-    );
+      debugLog('[RANGE] gated', yinResult.frequency.toFixed(2));
       this.detectionCallback?.(null);
       return null;
     }
 
     /**
-     * STEP 7 — Convert frequency → musical note
+     * STEP 6 — Convert frequency → musical note
      */
-    const note = frequencyToNote(smoothed.frequency, smoothed.confidence);
+    const note = frequencyToNote(
+      yinResult.frequency,
+      yinResult.confidence
+    );
 
     /**
      * FINAL — Build detection result
      */
     const detection: AudioDetection = {
       timestamp: timestampMs,
-      frequency: smoothed.frequency,
-      amplitude,
-      confidence: smoothed.confidence,
+      frequency: yinResult.frequency,
+      amplitude: 0, // amplitude is now owned by native layer
+      confidence: yinResult.confidence,
       note,
     };
 
     this.detectionCallback?.(detection);
-
     return detection;
   }
 
   /**
    * Zero-Crossing estimation
-   * Very lightweight and works well on fundamental-heavy low notes.
+   * Lightweight and effective for fundamental-heavy low notes.
    */
-  private estimateFrequencyZeroCrossing(samples: Float32Array, sampleRate: number): number | null {
+  private estimateFrequencyZeroCrossing(
+    samples: Float32Array,
+    sampleRate: number
+  ): number | null {
     let crossings = 0;
     let prev = samples[0];
 
@@ -301,44 +218,11 @@ export class PitchDetectionService {
     const duration = samples.length / sampleRate;
     if (duration <= 0 || crossings < 2) return null;
 
-    // A full waveform cycle includes approximately 2 zero-crossings
     return crossings / (2 * duration);
   }
 
   /**
-   * RMS amplitude for amplitude gating and UI visualization.
-   */
-  private calculateRMS(samples: Float32Array): number {
-    let sum = 0;
-    for (let i = 0; i < samples.length; i++) {
-      sum += samples[i] * samples[i];
-    }
-    return Math.sqrt(sum / samples.length);
-  }
-
-  /**
-   * Update internal configuration on the fly.
-   */
-  updateConfig(config: Partial<PitchDetectionConfig>): void {
-    this.config = { ...this.config, ...config };
-
-    if (config.sampleRate !== undefined) {
-      this.yinDetector.setSampleRate(config.sampleRate);
-    }
-    if (config.yinThreshold !== undefined) {
-      this.yinDetector.setThreshold(config.yinThreshold);
-    }
-    if (config.bufferSize !== undefined) {
-      this.yinDetector.setBufferSize(config.bufferSize);
-      this.fft = new FFT(config.bufferSize);
-    }
-    if (config.smoothingWindow !== undefined) {
-      this.smoothingFilter = new PitchSmoothingFilter(config.smoothingWindow);
-    }
-  }
-
-  /**
-   * Update sample rate as provided by native iOS audio engine.
+   * Update sample rate if native engine changes it.
    */
   setSampleRate(sampleRate: number): void {
     if (!sampleRate || sampleRate <= 0) return;
@@ -350,23 +234,8 @@ export class PitchDetectionService {
     console.log('[PitchDetection] sample rate updated →', sampleRate);
   }
 
-  getConfig(): PitchDetectionConfig {
-    return { ...this.config };
-  }
-
   isRunning(): boolean {
     return this.isActive;
-  }
-
-  reset(): void {
-    this.smoothingFilter.reset();
-  }
-
-  getStats() {
-    return {
-      isActive: this.isActive,
-      config: this.config,
-    };
   }
 }
 

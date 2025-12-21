@@ -8,6 +8,9 @@
  *  - Automatically starts listening when the screen mounts
  *  - Displays current pitch detection (note, frequency, confidence)
  *  - User can Pause / Resume the audio pipeline
+ *
+ * IMPORTANT:
+ *  - Uses TTL (time-to-live) to prevent "frozen note" UI issues
  */
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -29,8 +32,8 @@ import type { AudioDetection } from "@/types";
 /* -------------------------------------------------- */
 
 type TestScreenNavProp = StackNavigationProp<
-    RootStackParamList,
-    "TestScreen"
+  RootStackParamList,
+  "TestScreen"
 >;
 
 /* -------------------------------------------------- */
@@ -38,208 +41,248 @@ type TestScreenNavProp = StackNavigationProp<
 /* -------------------------------------------------- */
 
 export default function TestScreen() {
-    const navigation = useNavigation<TestScreenNavProp>();
+  const navigation = useNavigation<TestScreenNavProp>();
 
-    // Create a single pipeline instance (never recreate on rerender)
-    const pipeline = useMemo(() => new AudioPipeline(), []);
+  // Create a single pipeline instance (never recreate on rerender)
+  const pipeline = useMemo(() => new AudioPipeline(), []);
 
-    const [currentDetection, setCurrentDetection] = useState<AudioDetection | null>(null);
-    const [isListening, setIsListening] = useState(false);
+  const [currentDetection, setCurrentDetection] =
+    useState<AudioDetection | null>(null);
 
-    /**
-     * On mount:
-     *  - Start listening immediately
-     * On unmount:
-     *  - Stop the pipeline
-     */
-    useEffect(() => {
-        console.log("[TestScreen] Mount → auto-start audio pipeline");
+  // Timestamp of the last valid detection (for TTL cleanup)
+  const [lastDetectionTs, setLastDetectionTs] =
+    useState<number | null>(null);
 
-        pipeline.start((detection) => {
-        setCurrentDetection(detection ?? null);
-        });
+  const [isListening, setIsListening] = useState(false);
 
-        setIsListening(true);
+  /**
+   * On mount:
+   *  - Start listening immediately
+   * On unmount:
+   *  - Stop the pipeline
+   */
+  useEffect(() => {
+    console.log("[TestScreen] Mount → auto-start audio pipeline");
 
-        return () => {
-        console.log("[TestScreen] Unmount → stop pipeline");
-        pipeline.stop();
-        setIsListening(false);
-        };
-    }, []);
+    pipeline.start((detection) => {
+      if (detection) {
+        setCurrentDetection(detection);
+        setLastDetectionTs(Date.now());
+      }
+    });
 
-    /**
-     * Pause or resume the audio pipeline
-     */
-    const handleToggleListening = () => {
-        if (isListening) {
-        pipeline.stop();
-        setIsListening(false);
-        return;
-        }
+    setIsListening(true);
 
-        pipeline.start((detection) => {
-        setCurrentDetection(detection ?? null);
-        });
-
-        setIsListening(true);
+    return () => {
+      console.log("[TestScreen] Unmount → stop pipeline");
+      pipeline.stop();
+      setIsListening(false);
+      setCurrentDetection(null);
+      setLastDetectionTs(null);
     };
+  }, []);
 
-    /**
-     * Navigate back and ensure everything stops
-     */
-    const handleGoBack = () => {
-        pipeline.stop();
-        setIsListening(false);
-        navigation.goBack();
-    };
+  /**
+   * TTL watchdog
+   * --------------------------------------------------
+   * Clears the UI if no fresh detection arrives within TTL_MS.
+   * This prevents frozen notes when audio stops or YIN returns null.
+   */
+  useEffect(() => {
+    const TTL_MS = 120; // Ideal range: 100–150 ms
 
-    /**
-     * Format detection output for display
-     */
-    const displayNote = () => {
-        if (!currentDetection?.note) return "--";
-        return getNoteString(currentDetection.note);
-    };
+    const interval = setInterval(() => {
+      if (
+        lastDetectionTs !== null &&
+        Date.now() - lastDetectionTs > TTL_MS
+      ) {
+        setCurrentDetection(null);
+        setLastDetectionTs(null);
+      }
+    }, 30);
 
-    const displayMeta = () => {
-        if (!currentDetection) return "No detection yet";
-        return `${currentDetection.frequency.toFixed(2)} Hz • ${(
-        currentDetection.confidence * 100
-        ).toFixed(0)}%`;
-    };
+    return () => clearInterval(interval);
+  }, [lastDetectionTs]);
 
-    return (
-        <SafeAreaView
-        style={{ flex: 1, backgroundColor: colors.bg.main }}
-        edges={["top"]}
-        >
-        <View style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-            <Title style={styles.title}>Test Screen</Title>
-            <Text style={styles.subtitle}>
-                Real-time pitch detection output viewer
-            </Text>
-            </View>
-
-            {/* Detection display */}
-            <Surface style={styles.surface}>
-            <Text style={styles.label}>CURRENT NOTE</Text>
-
-            <Text style={styles.noteText}>{displayNote()}</Text>
-
-            <Text style={styles.metaText}>{displayMeta()}</Text>
-            </Surface>
-
-            {/* Controls */}
-            <View style={styles.controls}>
-            <Button
-                mode="contained"
-                onPress={handleToggleListening}
-                style={styles.primaryButton}
-                icon={isListening ? "pause" : "play"}
-                textColor="#fff"
-            >
-                {isListening ? "Pause Listening" : "Resume Listening"}
-            </Button>
-
-            <Button
-                mode="outlined"
-                onPress={handleGoBack}
-                style={styles.secondaryButton}
-                icon="arrow-left"
-                textColor="#C77DFF"
-            >
-                Back
-            </Button>
-            </View>
-        </View>
-        </SafeAreaView>
-    );
+  /**
+   * Pause or resume the audio pipeline
+   */
+  const handleToggleListening = () => {
+    if (isListening) {
+      pipeline.stop();
+      setIsListening(false);
+      setCurrentDetection(null);
+      setLastDetectionTs(null);
+      return;
     }
+
+    pipeline.start((detection) => {
+      if (detection) {
+        setCurrentDetection(detection);
+        setLastDetectionTs(Date.now());
+      }
+    });
+
+    setIsListening(true);
+  };
+
+  /**
+   * Navigate back and ensure everything stops
+   */
+  const handleGoBack = () => {
+    pipeline.stop();
+    setIsListening(false);
+    setCurrentDetection(null);
+    setLastDetectionTs(null);
+    navigation.goBack();
+  };
+
+  /**
+   * Format detection output for display
+   */
+  const displayNote = () => {
+    if (!currentDetection?.note) return "--";
+    return getNoteString(currentDetection.note);
+  };
+
+  const displayMeta = () => {
+    if (!currentDetection) return "No detection";
+    return `${currentDetection.frequency.toFixed(2)} Hz • ${(
+      currentDetection.confidence * 100
+    ).toFixed(0)}%`;
+  };
+
+  return (
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: colors.bg.main }}
+      edges={["top"]}
+    >
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Title style={styles.title}>Test Screen</Title>
+          <Text style={styles.subtitle}>
+            Real-time pitch detection output viewer
+          </Text>
+        </View>
+
+        {/* Detection display */}
+        <Surface style={styles.surface}>
+          <Text style={styles.label}>CURRENT NOTE</Text>
+
+          <Text style={styles.noteText}>{displayNote()}</Text>
+
+          <Text style={styles.metaText}>{displayMeta()}</Text>
+        </Surface>
+
+        {/* Controls */}
+        <View style={styles.controls}>
+          <Button
+            mode="contained"
+            onPress={handleToggleListening}
+            style={styles.primaryButton}
+            icon={isListening ? "pause" : "play"}
+            textColor="#fff"
+          >
+            {isListening ? "Pause Listening" : "Resume Listening"}
+          </Button>
+
+          <Button
+            mode="outlined"
+            onPress={handleGoBack}
+            style={styles.secondaryButton}
+            icon="arrow-left"
+            textColor="#C77DFF"
+          >
+            Back
+          </Button>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
 
 /* -------------------------------------------------- */
 /* Styles                                              */
 /* -------------------------------------------------- */
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        paddingHorizontal: 16,
-        paddingTop: 16,
-        backgroundColor: colors.bg.main,
-    },
+  container: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    backgroundColor: colors.bg.main,
+  },
 
-    header: {
-        marginBottom: 20,
-        alignItems: "center",
-    },
+  header: {
+    marginBottom: 20,
+    alignItems: "center",
+  },
 
-    title: {
-        color: colors.text.primary,
-        fontSize: 20,
-        fontWeight: "700",
-        letterSpacing: 0.6,
-    },
+  title: {
+    color: colors.text.primary,
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+  },
 
-    subtitle: {
-        marginTop: 4,
-        color: colors.text.subtle,
-        fontSize: 12,
-        textAlign: "center",
-    },
+  subtitle: {
+    marginTop: 4,
+    color: colors.text.subtle,
+    fontSize: 12,
+    textAlign: "center",
+  },
 
-    surface: {
-        marginTop: 10,
-        marginBottom: 24,
-        paddingVertical: 32,
-        borderRadius: 18,
-        alignItems: "center",
-        backgroundColor: "rgba(36,0,56,0.75)",
-        borderWidth: 1.5,
-        borderColor: "rgba(199,125,255,0.6)",
-        shadowColor: "#C77DFF",
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.65,
-        shadowRadius: 16,
-    },
+  surface: {
+    marginTop: 10,
+    marginBottom: 24,
+    paddingVertical: 32,
+    borderRadius: 18,
+    alignItems: "center",
+    backgroundColor: "rgba(36,0,56,0.75)",
+    borderWidth: 1.5,
+    borderColor: "rgba(199,125,255,0.6)",
+    shadowColor: "#C77DFF",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.65,
+    shadowRadius: 16,
+  },
 
-    label: {
-        color: colors.text.subtle,
-        letterSpacing: 1,
-        fontSize: 12,
-        marginBottom: 8,
-    },
+  label: {
+    color: colors.text.subtle,
+    letterSpacing: 1,
+    fontSize: 12,
+    marginBottom: 8,
+  },
 
-    noteText: {
-        fontSize: 56,
-        fontWeight: "800",
-        color: colors.text.primary,
-    },
+  noteText: {
+    fontSize: 56,
+    fontWeight: "800",
+    color: colors.text.primary,
+  },
 
-    metaText: {
-        marginTop: 8,
-        color: colors.text.subtle,
-        fontSize: 14,
-    },
+  metaText: {
+    marginTop: 8,
+    color: colors.text.subtle,
+    fontSize: 14,
+  },
 
-    controls: {
-        marginTop: 8,
-    },
+  controls: {
+    marginTop: 8,
+  },
 
-    primaryButton: {
-        backgroundColor: "#250036",
-        borderRadius: 26,
-        borderWidth: 2,
-        borderColor: "rgba(199,125,255,0.65)",
-        marginBottom: 12,
-    },
+  primaryButton: {
+    backgroundColor: "#250036",
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: "rgba(199,125,255,0.65)",
+    marginBottom: 12,
+  },
 
-    secondaryButton: {
-        borderRadius: 26,
-        borderWidth: 1.5,
-        borderColor: "rgba(199,125,255,0.65)",
-        backgroundColor: "rgba(36,0,56,0.4)",
-    },
+  secondaryButton: {
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: "rgba(199,125,255,0.65)",
+    backgroundColor: "rgba(36,0,56,0.4)",
+  },
 });
