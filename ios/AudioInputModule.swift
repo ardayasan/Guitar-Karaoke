@@ -37,7 +37,7 @@ final class AudioInputModule: RCTEventEmitter {
   // - onsetThreshold: signal must exceed this to be considered "started"
   // - releaseThreshold: signal must fall below this to be considered "ended" (hysteresis)
     private let onsetThreshold: Float = 0.0015
-    private let releaseThreshold: Float = 0.0
+    private let releaseThreshold: Float = 0.0008
 
   // MARK: - React Native
   override static func requiresMainQueueSetup() -> Bool {

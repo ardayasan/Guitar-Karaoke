@@ -44,7 +44,7 @@ export const DEFAULT_PITCH_CONFIG: PitchDetectionConfig = {
 export type PitchDetectionCallback = (d: AudioDetection | null) => void;
 
 // Debug flag
-const DEBUG_PITCH = true;
+const DEBUG_PITCH = false;
 
 function debugLog(...args: any[]) {
   if (DEBUG_PITCH) {

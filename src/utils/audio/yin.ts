@@ -12,11 +12,10 @@
  * YIN provides highly accurate monophonic pitch detection and is more robust
  * than FFT-only approaches, especially for musical instruments.
  */
-
 import { Frequency } from '@/types';
 
 
-const DEBUG_YIN = true;
+const DEBUG_YIN = false;
 const DEBUG_YIN_INTERNAL = false;
 
 function yinDebug(enabled: boolean, ...args: any[]) {

@@ -3,3 +3,4 @@
  */
 
 export * from './noteUtils';
+export * from './chordUtils';
