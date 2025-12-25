@@ -12,7 +12,7 @@ export type RootStackParamList = {
   };
   Settings: undefined;
   Information: undefined;
-  TestScreen: undefined;
+  DetectionTest: undefined;
 };
 
 declare global {

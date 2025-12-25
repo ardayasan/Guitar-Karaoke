@@ -3,11 +3,13 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { RootStackParamList } from './types';
 
+// screens
 import HomeScreen from '@/screens/home/HomeScreen';
 import LibraryScreen from '@/screens/library/LibraryScreen';
 import PracticeScreen from '@/screens/practice/PracticeScreen';
 import SettingsScreen from '@/screens/settings/SettingsScreen';
 import InformationScreen from '@/screens/information/InformationScreen';
+import DetectionTestScreen from '@/screens/detection-test/DetectionTestScreen';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -75,6 +77,15 @@ export default function AppNavigator() {
           options={{
             title: 'About SmartTab',
             headerBackTitle: "Home"
+          }}
+        />
+
+        <Stack.Screen
+          name="DetectionTest"
+          component={DetectionTestScreen}
+          options={{
+            title: "Detection Test",
+            headerBackTitle: "Home",
           }}
         />
       </Stack.Navigator>
