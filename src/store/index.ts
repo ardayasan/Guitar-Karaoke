@@ -2,5 +2,7 @@
  * Zustand stores export
  */
 
-export * from './practiceStore';
-export * from './libraryStore';
+export { useLibraryStore } from "./libraryStore";
+export { usePracticeStore } from "./practice/practiceStore";
+
+

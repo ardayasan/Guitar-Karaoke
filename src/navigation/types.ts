@@ -3,12 +3,13 @@
  */
 
 import { Tablature } from '@/types';
+import { PracticeTab } from '@/types/practice/PracticeTab';
 
 export type RootStackParamList = {
   Home: undefined;
   Library: undefined;
   Practice: {
-    tab: Tablature;
+    tab: PracticeTab;
   };
   Settings: undefined;
   Information: undefined;

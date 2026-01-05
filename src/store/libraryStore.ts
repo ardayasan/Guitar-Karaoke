@@ -1,132 +1,88 @@
-/**
- * Library State Management
- * Manages tablature library and song selection
- */
-
 import { create } from 'zustand';
-import { Tablature, TabLibraryItem } from '@/types';
-import { SAMPLE_LIBRARY_ITEMS, getSampleTabById } from '@/data/sampleTabs';
+import { PracticeTab, Difficulty } from '@/types/practice/PracticeTab';
+import { PRACTICE_TABS } from '@/data/practiceTabs';
 
 export interface LibraryState {
-  // Library items
-  items: TabLibraryItem[];
-  currentTab: Tablature | null;
+  tabs: PracticeTab[];
+  currentTab: PracticeTab | null;
 
-  // UI state
   isLoading: boolean;
   error: string | null;
 
-  // Filters
   searchQuery: string;
-  difficultyFilter: string | null;
+  difficultyFilter: Difficulty | null;
 
   // Actions
-  addItem: (item: TabLibraryItem) => void;
-  removeItem: (id: string) => void;
-  updateItem: (id: string, updates: Partial<TabLibraryItem>) => void;
-  setCurrentTab: (tab: Tablature | null) => void;
+  setCurrentTab: (tab: PracticeTab | null) => void;
   loadTabById: (id: string) => void;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
+
   setSearchQuery: (query: string) => void;
-  setDifficultyFilter: (difficulty: string | null) => void;
-  getFilteredItems: () => TabLibraryItem[];
-  reset: () => void;
+  setDifficultyFilter: (difficulty: Difficulty | null) => void;
+
+  getFilteredTabs: () => PracticeTab[];
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
-  // Initial state - includes sample tabs
-  items: [...SAMPLE_LIBRARY_ITEMS],
+  tabs: PRACTICE_TABS,
   currentTab: null,
+
   isLoading: false,
   error: null,
+
   searchQuery: '',
   difficultyFilter: null,
 
-  // Actions
-  addItem: (item: TabLibraryItem) =>
-    set((state) => ({
-      items: [...state.items, item],
-    })),
+  /* -------- Selection -------- */
 
-  removeItem: (id: string) =>
-    set((state) => ({
-      items: state.items.filter((item) => item.id !== id),
-    })),
-
-  updateItem: (id: string, updates: Partial<TabLibraryItem>) =>
-    set((state) => ({
-      items: state.items.map((item) =>
-        item.id === id ? { ...item, ...updates } : item
-      ),
-    })),
-
-  setCurrentTab: (tab: Tablature | null) =>
+  setCurrentTab: (tab) =>
     set({
       currentTab: tab,
+      error: null,
     }),
 
-  loadTabById: (id: string) => {
-    const tab = getSampleTabById(id);
+  loadTabById: (id) => {
+    const { tabs } = get();
+    const tab = tabs.find((t) => t.id === id);
+
     if (tab) {
-      set({ currentTab: tab });
+      set({ currentTab: tab, error: null });
     } else {
-      set({ error: 'Tab not found' });
+      set({ error: 'Practice tab not found' });
     }
   },
 
-  setLoading: (loading: boolean) =>
-    set({
-      isLoading: loading,
-    }),
-
-  setError: (error: string | null) =>
-    set({
-      error,
-    }),
-
-  setSearchQuery: (query: string) =>
+  /* -------- Filters -------- */
+  setSearchQuery: (query) =>
     set({
       searchQuery: query,
     }),
 
-  setDifficultyFilter: (difficulty: string | null) =>
+  setDifficultyFilter: (difficulty) =>
     set({
       difficultyFilter: difficulty,
     }),
 
-  getFilteredItems: () => {
-    const { items, searchQuery, difficultyFilter } = get();
+  getFilteredTabs: () => {
+    const { tabs, searchQuery, difficultyFilter } = get();
 
-    return items.filter((item) => {
-      // Filter by search query
+    return tabs.filter((tab) => {
+      const { title, artist, difficulty } = tab.metadata;
+
       if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesSearch =
-          item.title.toLowerCase().includes(query) ||
-          item.artist.toLowerCase().includes(query);
-
-        if (!matchesSearch) {
+        const q = searchQuery.toLowerCase();
+        if (
+          !title.toLowerCase().includes(q) &&
+          !artist.toLowerCase().includes(q)
+        ) {
           return false;
         }
       }
 
-      // Filter by difficulty
-      if (difficultyFilter && item.difficulty !== difficultyFilter) {
+      if (difficultyFilter && difficulty !== difficultyFilter) {
         return false;
       }
 
       return true;
     });
   },
-
-  reset: () =>
-    set({
-      items: [...SAMPLE_LIBRARY_ITEMS],
-      currentTab: null,
-      isLoading: false,
-      error: null,
-      searchQuery: '',
-      difficultyFilter: null,
-    }),
 }));

@@ -20,7 +20,7 @@ import * as DocumentPicker from "expo-document-picker";
 
 import { RootStackParamList } from "@/navigation/types";
 import { useLibraryStore } from "@/store";
-import { TabLibraryItem } from "@/types";
+import { PracticeTab } from "@/types/practice/PracticeTab";
 import colors from "@/theme/colors";
 import typography from "@/theme/typography";
 
@@ -32,11 +32,11 @@ export default function LibraryScreen() {
   const {
     searchQuery,
     setSearchQuery,
-    getFilteredItems,
+    getFilteredTabs,
     loadTabById,
   } = useLibraryStore();
 
-  const filteredItems = getFilteredItems();
+  const filteredTabs = getFilteredTabs();
 
 /* ============================== */
 
@@ -60,68 +60,58 @@ export default function LibraryScreen() {
 
 /* ============================== */
 
-  const handleSelectTab = (item: TabLibraryItem) => {
-    loadTabById(item.id);
+  const handleSelectTab = (tab: PracticeTab) => {
+    loadTabById(tab.id);
 
     setTimeout(() => {
-      const tab = useLibraryStore.getState().currentTab;
+      const currentTab = useLibraryStore.getState().currentTab;
 
-      if (tab) {
-        navigation.navigate("Practice", { tab });
+      if (currentTab) {
+        navigation.navigate("Practice", { tab: currentTab });
       } else {
         Alert.alert("Error", "Failed to load tab");
       }
-    }, 100);
+    }, 50);
   };
 
 /* ============================== */
 
-  const renderItem = ({ item }: { item: TabLibraryItem }) => (
-    <Card
-      style={styles.card}
-      onPress={() => handleSelectTab(item)}
-      elevation={0}
-    >
-      <Card.Content style={styles.cardContent}>
+  const renderItem = ({ item }: { item: PracticeTab }) => {
+    const { title, artist, difficulty, bpm } = item.metadata;
 
-        <Title style={styles.title}>
-          {item.title}
-        </Title>
+    return (
+      <Card
+        style={styles.card}
+        onPress={() => handleSelectTab(item)}
+        elevation={0}
+      >
+        <Card.Content style={styles.cardContent}>
 
-        <Paragraph style={styles.artist}>
-          {item.artist}
-        </Paragraph>
+          <Title style={styles.title}>
+            {title}
+          </Title>
 
-        <View style={styles.chipRow}>
+          <Paragraph style={styles.artist}>
+            {artist}
+          </Paragraph>
 
-          <Chip
-            style={styles.chip}
-            textStyle={styles.chipText}
-          >
-            {item.difficulty}
-          </Chip>
+          <View style={styles.chipRow}>
 
-          <Chip
-            style={styles.chip}
-            textStyle={styles.chipText}
-          >
-            {item.tempo} BPM
-          </Chip>
-
-          {item.bestAccuracy !== undefined && (
-            <Chip
-              style={styles.chip}
-              textStyle={styles.chipText}
-            >
-              Best {item.bestAccuracy.toFixed(0)}%
+            <Chip style={styles.chip} textStyle={styles.chipText}>
+              {difficulty}
             </Chip>
-          )}
 
-        </View>
+            <Chip style={styles.chip} textStyle={styles.chipText}>
+              {bpm} BPM
+            </Chip>
 
-      </Card.Content>
-    </Card>
-  );
+          </View>
+
+        </Card.Content>
+      </Card>
+    );
+  };
+
 
 /* ============================== */
 
@@ -137,7 +127,7 @@ export default function LibraryScreen() {
         placeholderTextColor={colors.text.subtle}
       />
 
-      {filteredItems.length === 0 ? (
+      {filteredTabs.length === 0 ? (
 
         <View style={styles.empty}>
 
@@ -164,7 +154,7 @@ export default function LibraryScreen() {
       ) : (
 
         <FlatList
-          data={filteredItems}
+          data={filteredTabs}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
