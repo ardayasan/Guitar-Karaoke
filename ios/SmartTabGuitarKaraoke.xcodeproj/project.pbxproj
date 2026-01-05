@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -13,6 +13,7 @@
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		6CB102C1A340A3F8AB2BE68C /* libPods-SmartTabGuitarKaraoke.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 0FF6A51EA0CD8164848E28E0 /* libPods-SmartTabGuitarKaraoke.a */; };
 		A64D941C2EF7700100FBEF27 /* AudioRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64D941B2EF7700100FBEF27 /* AudioRingBuffer.swift */; };
+		A651B3A12F0C435600EB9D3D /* NativeAudioPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A651B3A02F0C435600EB9D3D /* NativeAudioPipeline.swift */; };
 		A66DE9002EDD05E8008B2DB2 /* AudioInputModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66DE8FF2EDD05E4008B2DB2 /* AudioInputModule.swift */; };
 		A66DE9042EDD073E008B2DB2 /* AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A66DE9032EDD073E008B2DB2 /* AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
@@ -27,6 +28,7 @@
 		229BE6D297358146DDC8D78F /* Pods-SmartTabGuitarKaraoke.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SmartTabGuitarKaraoke.release.xcconfig"; path = "Target Support Files/Pods-SmartTabGuitarKaraoke/Pods-SmartTabGuitarKaraoke.release.xcconfig"; sourceTree = "<group>"; };
 		43D281D244440892471D5262 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = SmartTabGuitarKaraoke/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A64D941B2EF7700100FBEF27 /* AudioRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRingBuffer.swift; sourceTree = "<group>"; };
+		A651B3A02F0C435600EB9D3D /* NativeAudioPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAudioPipeline.swift; sourceTree = "<group>"; };
 		A66DE8FF2EDD05E4008B2DB2 /* AudioInputModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioInputModule.swift; sourceTree = "<group>"; };
 		A66DE9032EDD073E008B2DB2 /* AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m"; sourceTree = "<group>"; };
 		A9F35A4E66535C6788C1DEE9 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-SmartTabGuitarKaraoke/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
@@ -37,6 +39,11 @@
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = SmartTabGuitarKaraoke/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* SmartTabGuitarKaraoke-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "SmartTabGuitarKaraoke-Bridging-Header.h"; path = "SmartTabGuitarKaraoke/SmartTabGuitarKaraoke-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A651B3A22F0C436100EB9D3D /* PitchDetection */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = PitchDetection; sourceTree = "<group>"; };
+		A651B3AF2F0C471500EB9D3D /* ChordDetection */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ChordDetection; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		13B07F8C1A680F5B00A75B9A /* Frameworks */ = {
@@ -53,6 +60,9 @@
 		13B07FAE1A68108700A75B9A /* SmartTabGuitarKaraoke */ = {
 			isa = PBXGroup;
 			children = (
+				A651B3AF2F0C471500EB9D3D /* ChordDetection */,
+				A651B3A22F0C436100EB9D3D /* PitchDetection */,
+				A651B3A02F0C435600EB9D3D /* NativeAudioPipeline.swift */,
 				A66DE8FF2EDD05E4008B2DB2 /* AudioInputModule.swift */,
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
 				F11748442D0722820044C1D9 /* SmartTabGuitarKaraoke-Bridging-Header.h */,
@@ -159,6 +169,10 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A651B3A22F0C436100EB9D3D /* PitchDetection */,
+				A651B3AF2F0C471500EB9D3D /* ChordDetection */,
 			);
 			name = SmartTabGuitarKaraoke;
 			productName = SmartTabGuitarKaraoke;
@@ -330,6 +344,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
+				A651B3A12F0C435600EB9D3D /* NativeAudioPipeline.swift in Sources */,
 				A64D941C2EF7700100FBEF27 /* AudioRingBuffer.swift in Sources */,
 				0C3C83CFFD320FFB07668809 /* ExpoModulesProvider.swift in Sources */,
 				A66DE9042EDD073E008B2DB2 /* AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m in Sources */,
