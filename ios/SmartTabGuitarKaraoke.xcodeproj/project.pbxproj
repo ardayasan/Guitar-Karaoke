@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 70;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -41,8 +41,28 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A651B3A22F0C436100EB9D3D /* PitchDetection */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = PitchDetection; sourceTree = "<group>"; };
-		A651B3AF2F0C471500EB9D3D /* ChordDetection */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ChordDetection; sourceTree = "<group>"; };
+		A651B3A22F0C436100EB9D3D /* PitchDetection */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = PitchDetection;
+			sourceTree = "<group>";
+		};
+		A651B3AF2F0C471500EB9D3D /* ChordDetection */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = ChordDetection;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -363,7 +383,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = SmartTabGuitarKaraoke/SmartTabGuitarKaraoke.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DN8S5Z2385;
+				DEVELOPMENT_TEAM = U4LZ582H7U;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -400,7 +420,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = SmartTabGuitarKaraoke/SmartTabGuitarKaraoke.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DN8S5Z2385;
+				DEVELOPMENT_TEAM = U4LZ582H7U;
 				INFOPLIST_FILE = SmartTabGuitarKaraoke/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (

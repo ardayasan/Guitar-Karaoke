@@ -3,7 +3,11 @@
 import { create } from 'zustand';
 import { PracticeState, PracticeStats } from './practiceStore.types';
 import { PracticeTab } from '@/types/practice/PracticeTab';
-import { PracticeStep } from '@/types/practice/PracticeStep';
+import {
+  hydrateStepTiming,
+  HydratedStep,
+  findStepForTime
+} from '@/utils/practice/hydrateStepTiming';
 
 const initialStats: PracticeStats = {
   totalSteps: 0,
@@ -23,16 +27,20 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   currentTime: 0,
 
   tab: null,
+  hydratedSteps: [],
   currentStepIndex: 0,
   currentStep: null,
 
   lastDetectedNote: null,
+  lastDetectedChord: null,
   stats: { ...initialStats },
 
   /* ---------- Actions ---------- */
 
   startPractice: (tab: PracticeTab) => {
-    const firstStep = tab.steps[0] ?? null;
+    // Hydrate steps with BPM-based timing
+    const hydratedSteps = hydrateStepTiming(tab.steps, tab.metadata.bpm);
+    const firstStep = hydratedSteps[0] ?? null;
 
     set({
       isActive: true,
@@ -40,10 +48,15 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       startTime: Date.now(),
       currentTime: 0,
       tab,
+      hydratedSteps,
       currentStepIndex: 0,
       currentStep: firstStep,
-      stats: { ...initialStats },
+      stats: {
+        ...initialStats,
+        totalSteps: hydratedSteps.length,
+      },
       lastDetectedNote: null,
+      lastDetectedChord: null,
     });
   },
 
@@ -62,6 +75,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       isActive: false,
       isPaused: false,
       tab: null,
+      hydratedSteps: [],
       currentStepIndex: 0,
       currentStep: null,
     }),
@@ -76,20 +90,76 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       lastDetectedNote: note,
     }),
 
+  setDetectedChord: (chord: { root: string; type: string } | null) =>
+    set({
+      lastDetectedChord: chord,
+    }),
+
+  /**
+   * Find and set the current step based on elapsed time.
+   * BPM-driven progression - no detection required to advance.
+   */
+  setCurrentStepByTime: (elapsedMs: number) => {
+    const { hydratedSteps, currentStepIndex } = get();
+
+    const step = findStepForTime(hydratedSteps, elapsedMs);
+
+    if (step && step.index !== currentStepIndex) {
+      set({
+        currentStepIndex: step.index,
+        currentStep: step,
+      });
+    }
+  },
+
+  /**
+   * Mark a specific step with a result and update stats.
+   */
+  setStepResult: (index: number, result: 'correct' | 'incorrect' | 'missed') => {
+    const { hydratedSteps, stats } = get();
+
+    if (index < 0 || index >= hydratedSteps.length) return;
+
+    // Update the step result
+    const updatedSteps = [...hydratedSteps];
+    updatedSteps[index] = { ...updatedSteps[index], result };
+
+    // Update stats
+    const newStats = { ...stats };
+
+    if (result === 'correct') {
+      newStats.correct++;
+      newStats.currentStreak++;
+      newStats.longestStreak = Math.max(newStats.longestStreak, newStats.currentStreak);
+    } else if (result === 'incorrect') {
+      newStats.incorrect++;
+      newStats.currentStreak = 0;
+    } else if (result === 'missed') {
+      newStats.missed++;
+      newStats.currentStreak = 0;
+    }
+
+    // Recalculate accuracy
+    const evaluated = newStats.correct + newStats.incorrect + newStats.missed;
+    newStats.accuracy = evaluated > 0
+      ? (newStats.correct / evaluated) * 100
+      : 0;
+
+    set({
+      hydratedSteps: updatedSteps,
+      stats: newStats,
+    });
+  },
+
   advanceStep: () => {
-    const { tab, currentStepIndex, stats } = get();
-    if (!tab) return;
+    const { hydratedSteps, currentStepIndex, stats } = get();
 
     const nextIndex = currentStepIndex + 1;
-    const nextStep = tab.steps[nextIndex] ?? null;
+    const nextStep = hydratedSteps[nextIndex] ?? null;
 
     set({
       currentStepIndex: nextIndex,
       currentStep: nextStep,
-      stats: {
-        ...stats,
-        totalSteps: stats.totalSteps + 1,
-      },
     });
   },
 
@@ -103,8 +173,11 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
         stats.longestStreak,
         stats.currentStreak
       );
-      stats.accuracy =
-        (stats.correct / Math.max(stats.totalSteps, 1)) * 100;
+
+      const evaluated = stats.correct + stats.incorrect + stats.missed;
+      stats.accuracy = evaluated > 0
+        ? (stats.correct / evaluated) * 100
+        : 0;
 
       return { stats };
     }),
@@ -115,8 +188,11 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
       stats.incorrect++;
       stats.currentStreak = 0;
-      stats.accuracy =
-        (stats.correct / Math.max(stats.totalSteps, 1)) * 100;
+
+      const evaluated = stats.correct + stats.incorrect + stats.missed;
+      stats.accuracy = evaluated > 0
+        ? (stats.correct / evaluated) * 100
+        : 0;
 
       return { stats };
     }),
@@ -127,8 +203,11 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
       stats.missed++;
       stats.currentStreak = 0;
-      stats.accuracy =
-        (stats.correct / Math.max(stats.totalSteps, 1)) * 100;
+
+      const evaluated = stats.correct + stats.incorrect + stats.missed;
+      stats.accuracy = evaluated > 0
+        ? (stats.correct / evaluated) * 100
+        : 0;
 
       return { stats };
     }),
@@ -140,9 +219,11 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       startTime: null,
       currentTime: 0,
       tab: null,
+      hydratedSteps: [],
       currentStepIndex: 0,
       currentStep: null,
       lastDetectedNote: null,
+      lastDetectedChord: null,
       stats: { ...initialStats },
     }),
 }));

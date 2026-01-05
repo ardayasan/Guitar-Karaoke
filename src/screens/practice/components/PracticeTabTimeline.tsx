@@ -5,6 +5,7 @@
  * - 6 horizontal strings
  * - Frets rendered ON strings
  * - Global vertical HUD bar marks current ACTIVE STEP
+ * - Color-coded feedback for correct/incorrect/missed
  *
  * NOTE:
  * This component is PURE.
@@ -18,15 +19,99 @@ import { Text } from "react-native-paper";
 
 import colors from "@/theme/colors";
 import { PracticeTab } from "@/types/practice/PracticeTab";
+import { PracticeStep } from "@/types/practice/PracticeStep";
 
 type Props = {
-    tab: PracticeTab;
-    currentIndex: number;
-    windowSize?: number;
+  tab: PracticeTab;
+  currentIndex: number;
+  windowSize?: number;
 };
 
 const STRINGS = [1, 2, 3, 4, 5, 6];
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+/**
+ * Get the bubble color based on step result
+ */
+function getBubbleColor(
+  step: PracticeStep,
+  isActive: boolean
+): { bg: string; border: string } {
+  const result = step.result;
+
+  if (isActive) {
+    return {
+      bg: colors.brand.primary,
+      border: colors.utility.accent,
+    };
+  }
+
+  switch (result) {
+    case 'correct':
+      return {
+        bg: colors.feedback.correct,
+        border: colors.feedback.correct,
+      };
+    case 'incorrect':
+      return {
+        bg: colors.feedback.incorrect,
+        border: colors.feedback.incorrect,
+      };
+    case 'missed':
+      return {
+        bg: colors.feedback.missed,
+        border: colors.feedback.missed,
+      };
+    case 'pending':
+    default:
+      return {
+        bg: 'rgba(122,60,255,0.6)',
+        border: 'rgba(199,125,255,0.5)',
+      };
+  }
+}
+
+/**
+ * Render a chord step (shows chord name instead of fret)
+ */
+function renderChordStep(
+  step: PracticeStep & { type: 'chord' },
+  colIdx: number,
+  isActive: boolean,
+  COL_WIDTH: number
+) {
+  const colorStyle = getBubbleColor(step, isActive);
+
+  return (
+    <View
+      key={`chord-${colIdx}`}
+      style={[
+        styles.chordContainer,
+        { width: COL_WIDTH },
+      ]}
+    >
+      <View
+        style={[
+          styles.chordBubble,
+          isActive && styles.chordBubbleActive,
+          {
+            backgroundColor: colorStyle.bg,
+            borderColor: colorStyle.border,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.chordText,
+            isActive && styles.chordTextActive,
+          ]}
+        >
+          {step.chordName}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 const PracticeTabTimeline: React.FC<Props> = ({
   tab,
@@ -55,9 +140,11 @@ const PracticeTabTimeline: React.FC<Props> = ({
     (SCREEN_WIDTH - 16) / windowSize
   );
 
+  // Check if we have any chord steps in visible window
+  const hasChordSteps = visibleSteps.some(s => s.type === 'chord');
+
   return (
     <View style={styles.container}>
-
       {/* ===== GLOBAL ACTIVE HUD BAR ===== */}
       <View
         style={[
@@ -69,9 +156,34 @@ const PracticeTabTimeline: React.FC<Props> = ({
         ]}
       />
 
+      {/* ===== CHORD ROW (if any chord steps exist) ===== */}
+      {hasChordSteps && (
+        <View style={styles.chordRow}>
+          {visibleSteps.map((step, colIdx) => {
+            const isActive = colIdx === 0;
+
+            if (step.type === 'chord') {
+              return renderChordStep(
+                step as PracticeStep & { type: 'chord' },
+                colIdx,
+                isActive,
+                COL_WIDTH
+              );
+            }
+
+            return (
+              <View
+                key={`chord-empty-${colIdx}`}
+                style={[styles.colSlot, { width: COL_WIDTH }]}
+              />
+            );
+          })}
+        </View>
+      )}
+
+      {/* ===== STRING ROWS ===== */}
       {STRINGS.map((string) => (
         <View key={string} style={styles.stringRow}>
-
           {/* STRING LINE */}
           <View style={styles.stringLine} />
 
@@ -79,6 +191,7 @@ const PracticeTabTimeline: React.FC<Props> = ({
             {visibleSteps.map((step, colIdx) => {
               const isActive = colIdx === 0;
 
+              // Skip non-note steps
               if (step.type !== "note") {
                 return (
                   <View
@@ -88,6 +201,7 @@ const PracticeTabTimeline: React.FC<Props> = ({
                 );
               }
 
+              // Skip if not on this string
               if (step.position.string !== string) {
                 return (
                   <View
@@ -96,6 +210,8 @@ const PracticeTabTimeline: React.FC<Props> = ({
                   />
                 );
               }
+
+              const colorStyle = getBubbleColor(step, isActive);
 
               return (
                 <View
@@ -109,6 +225,11 @@ const PracticeTabTimeline: React.FC<Props> = ({
                     style={[
                       styles.bubble,
                       isActive && styles.bubbleActive,
+                      {
+                        backgroundColor: colorStyle.bg,
+                        borderColor: colorStyle.border,
+                        borderWidth: 2,
+                      },
                     ]}
                   >
                     <Text
@@ -124,14 +245,12 @@ const PracticeTabTimeline: React.FC<Props> = ({
               );
             })}
           </View>
-
         </View>
       ))}
 
       <Text style={styles.progress}>
         Step {currentIndex + 1} / {steps.length}
       </Text>
-
     </View>
   );
 };
@@ -161,6 +280,45 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 0 },
     zIndex: -1,
+  },
+
+  // Chord row (above strings)
+  chordRow: {
+    flexDirection: 'row',
+    height: 50,
+    marginBottom: 8,
+  },
+
+  chordContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  chordBubble: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 2,
+    shadowColor: "#C77DFF",
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+  },
+
+  chordBubbleActive: {
+    shadowOpacity: 0.85,
+    shadowRadius: 12,
+  },
+
+  chordText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff",
+  },
+
+  chordTextActive: {
+    fontSize: 18,
+    fontWeight: "800",
   },
 
   stringRow: {

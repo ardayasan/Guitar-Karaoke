@@ -7,6 +7,7 @@ import { RootStackParamList } from './types';
 import HomeScreen from '@/screens/home/HomeScreen';
 import LibraryScreen from '@/screens/library/LibraryScreen';
 import PracticeScreen from '@/screens/practice/PracticeScreen';
+import LandscapePracticeScreen from '@/screens/practice/LandscapePracticeScreen';
 import SettingsScreen from '@/screens/settings/SettingsScreen';
 import InformationScreen from '@/screens/information/InformationScreen';
 import DetectionTestScreen from '@/screens/detection-test/DetectionTestScreen';
@@ -21,7 +22,7 @@ export default function AppNavigator() {
         screenOptions={{
           headerStyle: {
             backgroundColor: '#12001c',
-            shadowColor: 'transparent', 
+            shadowColor: 'transparent',
             elevation: 0,
           },
           headerTintColor: '#C77DFF',
@@ -54,6 +55,17 @@ export default function AppNavigator() {
         <Stack.Screen
           name="Practice"
           component={PracticeScreen}
+          options={{
+            title: 'Practice Mode',
+            headerLeft: () => null,
+            gestureEnabled: false,
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="LandscapePractice"
+          component={LandscapePracticeScreen}
           options={{
             title: 'Practice Mode',
             headerLeft: () => null,

@@ -2,6 +2,7 @@
 
 import { PracticeTab } from '@/types/practice/PracticeTab';
 import { PracticeStep } from '@/types/practice/PracticeStep';
+import { HydratedStep } from '@/utils/practice/hydrateStepTiming';
 
 export interface PracticeStats {
     totalSteps: number;
@@ -21,10 +22,16 @@ export interface PracticeState {
     currentTime: number;
 
     tab: PracticeTab | null;
+
+    /** BPM-hydrated steps with timing info */
+    hydratedSteps: HydratedStep[];
+
     currentStepIndex: number;
-    currentStep: PracticeStep | null;
+    currentStep: HydratedStep | null;
 
     lastDetectedNote: { name: string; octave: number } | null;
+    lastDetectedChord: { root: string; type: string } | null;
+
     stats: PracticeStats;
 
     /* ---------- Actions ---------- */
@@ -35,6 +42,13 @@ export interface PracticeState {
 
     updateTime: (time: number) => void;
     setDetectedNote: (note: { name: string; octave: number } | null) => void;
+    setDetectedChord: (chord: { root: string; type: string } | null) => void;
+
+    /** Set the current step index based on elapsed time */
+    setCurrentStepByTime: (elapsedMs: number) => void;
+
+    /** Mark a specific step with a result */
+    setStepResult: (index: number, result: 'correct' | 'incorrect' | 'missed') => void;
 
     advanceStep: () => void;
 
@@ -44,3 +58,4 @@ export interface PracticeState {
 
     resetPractice: () => void;
 }
+
