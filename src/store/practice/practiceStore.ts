@@ -125,7 +125,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
   /**
    * Mark current step correct and advance to next.
-   * GUARD: Only executes if current step is pending or incorrect (prevents double-evaluation)
+   * Updates stats and advances to next step.
    */
   markCorrectAndAdvance: () => {
     const { hydratedSteps, currentStepIndex, stats } = get();
@@ -135,20 +135,21 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
     const currentStep = hydratedSteps[currentStepIndex];
 
-    // If already processed (correct and stats updated), just advance
-    const wasAlreadyCorrect = currentStep.result === 'correct';
+    // Check if stats were already updated for this step
+    const statsAlreadyUpdated = currentStep.statsUpdated === true;
 
     // Mark current step as correct
     const updatedSteps = [...hydratedSteps];
     const wasIncorrect = currentStep.result === 'incorrect';
     updatedSteps[currentStepIndex] = {
       ...updatedSteps[currentStepIndex],
-      result: 'correct'
+      result: 'correct',
+      statsUpdated: true, // Mark that we've counted this in stats
     };
 
     // Update stats only if not already counted
     const newStats = { ...stats };
-    if (!wasAlreadyCorrect) {
+    if (!statsAlreadyUpdated) {
       newStats.correct++;
 
       // If this step was previously marked incorrect, count it in stats

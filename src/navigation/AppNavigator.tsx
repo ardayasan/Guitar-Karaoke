@@ -11,6 +11,8 @@ import LandscapePracticeScreen from '@/screens/practice/LandscapePracticeScreen'
 import SettingsScreen from '@/screens/settings/SettingsScreen';
 import InformationScreen from '@/screens/information/InformationScreen';
 import DetectionTestScreen from '@/screens/detection-test/DetectionTestScreen';
+import TunerScreen from '@/screens/tuner/TunerScreen';
+import SongwritingScreen from '@/screens/songwriting/SongwritingScreen';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -97,6 +99,24 @@ export default function AppNavigator() {
           component={DetectionTestScreen}
           options={{
             title: "Detection Test",
+            headerBackTitle: "Home",
+          }}
+        />
+
+        <Stack.Screen
+          name="Tuner"
+          component={TunerScreen}
+          options={{
+            title: "Guitar Tuner",
+            headerBackTitle: "Home",
+          }}
+        />
+
+        <Stack.Screen
+          name="Songwriting"
+          component={SongwritingScreen}
+          options={{
+            title: "Song Creator",
             headerBackTitle: "Home",
           }}
         />

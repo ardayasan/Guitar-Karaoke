@@ -20,7 +20,6 @@ import { RootStackParamList } from "@/navigation/types";
 import { usePracticeStore } from "@/store";
 import colors from "@/theme/colors";
 import { AudioPipeline } from "@/services/audio/AudioPipeline";
-import { MetronomeService } from "@/services/audio/MetronomeService";
 
 // UI Components
 import PracticeHeader from "./components/PracticeHeader";
@@ -47,7 +46,6 @@ export default function PracticeScreen() {
 
   /* ---------- Audio pipeline ---------- */
   const pipelineRef = useRef<AudioPipeline | null>(null);
-  const metronomeRef = useRef<MetronomeService | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const advanceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -78,7 +76,6 @@ export default function PracticeScreen() {
 
   const [isListening, setIsListening] = useState(false);
   const [debugMsg, setDebugMsg] = useState<string>("");
-  const [isMetronomeOn, setIsMetronomeOn] = useState(false);
   const [hasCompleted, setHasCompleted] = useState(false);
 
   /* ================================================= */
@@ -87,13 +84,10 @@ export default function PracticeScreen() {
   useEffect(() => {
     startPractice(tab);
     pipelineRef.current = new AudioPipeline();
-    metronomeRef.current = new MetronomeService();
 
     return () => {
       pipelineRef.current?.stop();
       pipelineRef.current = null;
-      metronomeRef.current?.destroy();
-      metronomeRef.current = null;
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -154,9 +148,16 @@ export default function PracticeScreen() {
 
     const now = Date.now();
 
-    // Skip rest steps
+    // Auto-skip rest steps and advance immediately
     if (step.type === 'rest') {
-      advanceStep();
+      // Mark as correct (no input needed for rests)
+      setStepResult(stepIdx, 'correct');
+
+      // Immediately advance to next step
+      setTimeout(() => {
+        markCorrectAndAdvance();
+      }, 100); // Small delay to show the step was processed
+
       return;
     }
 
@@ -304,21 +305,6 @@ export default function PracticeScreen() {
   const handleStopListening = () => {
     pipelineRef.current?.stop();
     setIsListening(false);
-    if (isMetronomeOn && metronomeRef.current) {
-      metronomeRef.current.stop();
-    }
-  };
-
-  const handleToggleMetronome = async () => {
-    if (!metronomeRef.current) return;
-
-    if (isMetronomeOn) {
-      await metronomeRef.current.stop();
-      setIsMetronomeOn(false);
-    } else {
-      await metronomeRef.current.start(tab.metadata.bpm);
-      setIsMetronomeOn(true);
-    }
   };
 
   const handleQuit = () => {
@@ -493,14 +479,6 @@ export default function PracticeScreen() {
               <Text style={styles.listeningBtnText}>🎤 Listening...</Text>
             </View>
           )}
-          <View
-            style={[styles.metronomeBtn, isMetronomeOn && styles.metronomeBtnActive]}
-            onTouchEnd={handleToggleMetronome}
-          >
-            <Text style={[styles.metronomeBtnText, isMetronomeOn && styles.metronomeBtnTextActive]}>
-              {isMetronomeOn ? '🔊' : '🔇'} Metronome
-            </Text>
-          </View>
           <View style={styles.quitBtn} onTouchEnd={handleQuit}>
             <Text style={styles.quitBtnText}>Quit</Text>
           </View>
@@ -650,27 +628,6 @@ const styles = StyleSheet.create({
   listeningBtnText: {
     color: colors.feedback.correct,
     fontSize: 16,
-    fontWeight: '700',
-  },
-  metronomeBtn: {
-    backgroundColor: 'rgba(199,125,255,0.2)',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(199,125,255,0.4)',
-  },
-  metronomeBtnActive: {
-    backgroundColor: 'rgba(199,125,255,0.4)',
-    borderColor: colors.utility.accent,
-  },
-  metronomeBtnText: {
-    color: colors.text.subtle,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  metronomeBtnTextActive: {
-    color: colors.utility.accent,
     fontWeight: '700',
   },
   quitBtn: {
