@@ -417,13 +417,6 @@ export default function PracticeScreen() {
         </View>
 
         {/* Status */}
-        {currentStep?.result === 'incorrect' && (
-          <View style={styles.incorrectBanner}>
-            <Text style={styles.bannerText}>
-              ❌ Wrong note - keep trying!
-            </Text>
-          </View>
-        )}
         {isComplete && (
           <View style={styles.completeBanner}>
             <Text style={styles.bannerText}>
@@ -536,14 +529,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'monospace',
     color: '#ffff00',
-  },
-  incorrectBanner: {
-    backgroundColor: 'rgba(255,92,92,0.2)',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.feedback.incorrect,
-    marginVertical: 8,
   },
   completeBanner: {
     backgroundColor: 'rgba(83,255,154,0.2)',
