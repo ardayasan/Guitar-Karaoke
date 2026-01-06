@@ -33,6 +33,29 @@ export default function HomeScreen() {
       {/* SIGNATURE */}
       <HomeSignature />
 
+      {/* FEATURE BUTTONS */}
+      <View style={styles.featuresWrapper}>
+        <Button
+          mode="contained"
+          onPress={() => navigation.navigate("Tuner")}
+          icon="music-clef-treble"
+          buttonColor={colors.brand.primary}
+          style={styles.featureButton}
+        >
+          Guitar Tuner
+        </Button>
+
+        <Button
+          mode="contained"
+          onPress={() => navigation.navigate("Songwriting")}
+          icon="pencil-plus"
+          buttonColor={colors.brand.primary}
+          style={styles.featureButton}
+        >
+          Create Song
+        </Button>
+      </View>
+
       {/* DETECTION TEST BUTTON */}
       <View style={styles.testButtonWrapper}>
         <Button
@@ -53,9 +76,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.main,
   },
 
+  // Feature buttons for Tuner and Songwriting
+  featuresWrapper: {
+    marginTop: 32,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+
+  featureButton: {
+    borderRadius: 12,
+    paddingVertical: 4,
+  },
+
   // for navigating to detection test screen button
   testButtonWrapper: {
-    marginTop: 32,
+    marginTop: 24,
     marginBottom: 48,
     paddingHorizontal: 16,
     opacity: 0.85,

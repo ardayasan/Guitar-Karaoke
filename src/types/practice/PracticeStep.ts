@@ -13,6 +13,8 @@ type BaseStep = {
     endTimeMs?: number;
     /** Runtime-set: evaluation result */
     result?: 'correct' | 'incorrect' | 'missed' | 'pending';
+    /** Runtime-set: whether stats have been updated for this step */
+    statsUpdated?: boolean;
 };
 
 export type PracticeNoteStep = BaseStep & {

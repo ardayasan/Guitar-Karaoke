@@ -17,6 +17,8 @@ export type RootStackParamList = {
   Settings: undefined;
   Information: undefined;
   DetectionTest: undefined;
+  Tuner: undefined;
+  Songwriting: undefined;
 };
 
 declare global {
