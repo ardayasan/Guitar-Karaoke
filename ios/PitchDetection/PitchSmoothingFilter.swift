@@ -1,3 +1,11 @@
+//
+//  PitchSmoothingFilter.swift
+//  SmartTabGuitarKaraoke
+//
+//  Created by Burak Kuruçay on 6.01.2026.
+//
+
+
 import Foundation
 
 final class PitchSmoothingFilter {

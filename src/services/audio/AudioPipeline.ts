@@ -6,11 +6,11 @@ const { AudioInputModule } = NativeModules;
 export type AudioPipelineCallback = (result: AudioDetection | null) => void;
 
 export class AudioPipeline {
-    private callback: AudioPipelineCallback | null = null;
-    private listeners: any[] = [];
-    private running = false;
+  private callback: AudioPipelineCallback | null = null;
+  private listeners: any[] = [];
+  private running = false;
 
-    start(callback: AudioPipelineCallback) {
+  start(callback: AudioPipelineCallback) {
     if (this.running) return;
 
     this.running = true;
@@ -19,31 +19,28 @@ export class AudioPipeline {
     const emitter = new NativeEventEmitter(AudioInputModule);
 
     this.listeners.push(
-        emitter.addListener("AudioDetection", (event) => {
-            if (!this.running) return;
-
-            // event already conforms to AudioDetection | null
-            this.callback?.(event ?? null);
-        })
-        );
-
-        AudioInputModule.start();
-    }
-
-    stop() {
+      emitter.addListener("AudioDetection", (event) => {
         if (!this.running) return;
+        this.callback?.(event ?? null);
+      })
+    );
 
-        this.running = false;
+    AudioInputModule.start();
+  }
 
-        this.listeners.forEach((l) => l.remove());
-        this.listeners = [];
+  stop() {
+    if (!this.running) return;
 
-        AudioInputModule.stop();
+    this.running = false;
 
-        this.callback = null;
-    }
+    this.listeners.forEach((l) => l.remove());
+    this.listeners = [];
 
-    isRunning() {
-        return this.running;
-    }
+    AudioInputModule.stop();
+    this.callback = null;
+  }
+
+  isRunning() {
+    return this.running;
+  }
 }

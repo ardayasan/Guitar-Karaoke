@@ -2,12 +2,8 @@
 //  FFT.swift
 //  SmartTabGuitarKaraoke
 //
-//  Real FFT helper for chord detection.
-//  Uses Accelerate (vDSP) correctly for REAL input.
-//
-//  IMPORTANT:
-//  - Input is real PCM samples.
-//  - Output magnitude spectrum length = N/2 (Nyquist excluded).
+//  JS FFT parity implementation using Accelerate
+//  Matches behavior of services/audio/fft.ts
 //
 
 import Foundation
@@ -15,96 +11,79 @@ import Accelerate
 
 final class FFT {
 
-    private let n: Int
+    private let size: Int
     private let log2n: vDSP_Length
     private let setup: FFTSetupD
 
-    // Working buffers (N/2)
-    private var realp: [Double]
-    private var imagp: [Double]
-
     init(size: Int) {
-        precondition(size > 0 && (size & (size - 1)) == 0, "FFT size must be power of two")
+        precondition(size > 0 && (size & (size - 1)) == 0,
+                     "FFT size must be power of two")
 
-        self.n = size
+        self.size = size
         self.log2n = vDSP_Length(log2(Double(size)))
 
-        guard let s = vDSP_create_fftsetupD(log2n, FFTRadix(kFFTRadix2)) else {
-            fatalError("vDSP_create_fftsetupD failed")
+        guard let setup = vDSP_create_fftsetupD(log2n, FFTRadix(kFFTRadix2)) else {
+            fatalError("Failed to create FFT setup")
         }
-        self.setup = s
-
-        // For vDSP_fft_zripD: split complex holds N/2 values
-        self.realp = Array(repeating: 0.0, count: size / 2)
-        self.imagp = Array(repeating: 0.0, count: size / 2)
+        self.setup = setup
     }
 
     deinit {
         vDSP_destroy_fftsetupD(setup)
     }
 
-    /// Returns magnitude spectrum for real input.
-    /// - Parameter signal: time-domain real samples (Double) length N
-    /// - Returns: magnitude spectrum length N/2 (bins 0..N/2-1), Nyquist excluded
-    func magnitudeSpectrum(fromRealSignal signal: [Double]) -> [Double] {
-        precondition(signal.count == n, "Signal length must match FFT size")
+    // MARK: - Forward FFT (JS parity)
 
-        let halfN = n / 2
+    /// Performs FFT on real-valued input.
+    /// Imaginary part is assumed to be zero.
+    func forward(realInput: [Double]) -> (real: [Double], imag: [Double]) {
+        precondition(realInput.count == size)
 
-        // -----------------------------
-        // ✅ Correct real-signal packing
-        // vDSP_fft_zripD expects:
-        // realp[i] = x[2i], imagp[i] = x[2i+1]
-        // -----------------------------
-        for i in 0..<halfN {
-            realp[i] = signal[2 * i]
-            imagp[i] = signal[2 * i + 1]
-        }
+        var real = realInput
+        var imag = [Double](repeating: 0.0, count: size)
 
-        // Perform in-place real FFT
-        realp.withUnsafeMutableBufferPointer { rPtr in
-            imagp.withUnsafeMutableBufferPointer { iPtr in
+        real.withUnsafeMutableBufferPointer { realPtr in
+            imag.withUnsafeMutableBufferPointer { imagPtr in
                 var split = DSPDoubleSplitComplex(
-                    realp: rPtr.baseAddress!,
-                    imagp: iPtr.baseAddress!
+                    realp: realPtr.baseAddress!,
+                    imagp: imagPtr.baseAddress!
                 )
-                vDSP_fft_zripD(setup, &split, 1, log2n, FFTDirection(FFT_FORWARD))
+
+                vDSP_fft_zipD(
+                    setup,
+                    &split,
+                    1,
+                    log2n,
+                    FFTDirection(FFT_FORWARD)
+                )
             }
         }
 
-        // -----------------------------
-        // Magnitude spectrum (N/2 bins)
-        // NOTE:
-        // For real FFT output:
-        //   realp[0] = DC (real)
-        //   imagp[0] = Nyquist (real)  <-- we EXCLUDE Nyquist by contract
-        // So bin 0 must be handled specially.
-        // -----------------------------
-        var mag = [Double](repeating: 0.0, count: halfN)
+        return (real, imag)
+    }
 
-        // Bin 0 (DC only)
-        let dc = realp[0]
-        mag[0] = abs(dc)
+    // MARK: - Magnitude spectrum (JS parity)
 
-        // Bins 1..N/2-1 (Nyquist excluded)
-        if halfN > 1 {
-            for k in 1..<halfN {
-                let re = realp[k]
-                let im = imagp[k]
-                let m = sqrt(re * re + im * im)
-                mag[k] = m
-            }
-        }
+    /// Returns magnitude spectrum (size / 2)
+    /// NO normalization (matches JS)
+    func magnitudeSpectrum(
+        real: [Double],
+        imag: [Double]
+    ) -> [Double] {
 
-        // Normalize (vDSP FFT is unnormalized)
-        let scale = 1.0 / Double(n)
-        vDSP_vsmulD(mag, 1, [scale], &mag, 1, vDSP_Length(halfN))
+        let half = size / 2
+        var mag = [Double](repeating: 0.0, count: half)
 
-        // Sanitize
-        for k in 0..<mag.count {
-            if !mag[k].isFinite || mag[k] < 0 { mag[k] = 0 }
+        for i in 0..<half {
+            let re = real[i]
+            let im = imag[i]
+            mag[i] = sqrt(re * re + im * im)
         }
 
         return mag
+    }
+
+    func getSize() -> Int {
+        return size
     }
 }

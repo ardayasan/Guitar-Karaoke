@@ -2,27 +2,18 @@
 //  ChordMatching.swift
 //  SmartTabGuitarKaraoke
 //
-//  Cosine similarity matching between chroma vectors
-//  and resolved chord templates.
-//  Mirrors services/chord/matching.ts
+//  JS parity – cosine similarity only
 //
 
 import Foundation
 
-/// Matches a chroma vector against a resolved chord template
-/// using cosine similarity.
-///
-/// - Parameters:
-///   - chroma: 12-dimensional normalized chroma vector
-///   - templatePitchClasses: pitch classes belonging to the chord template
-/// - Returns: similarity score in range [0, 1]
 public func matchTemplateToChroma(
     chroma: ChromaVector,
     templatePitchClasses: [PitchClass]
 ) -> Double {
 
-    // Build binary template vector
     var templateVector = Array(repeating: 0.0, count: 12)
+
     for pc in templatePitchClasses {
         guard pc >= 0 && pc < 12 else { continue }
         templateVector[pc] = 1.0

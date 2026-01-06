@@ -2,43 +2,25 @@
 //  HannWindow.swift
 //  SmartTabGuitarKaraoke
 //
-//  DSP utility for chord detection.
-//  Applies Hann window to time-domain samples.
-//
-//  NOTE:
-//  This is a generic DSP helper, currently scoped
-//  under chordDetection/utils for simplicity.
+//  JS parity: applyHannWindow(samples)
+//  window[i] = 0.5 * (1 - cos(2πi/(N-1)))
 //
 
 import Foundation
-import Accelerate
 
-/// Applies a Hann window to the given samples.
-///
-/// - Parameter samples: Time-domain PCM samples
-/// - Returns: Windowed samples
 @inline(__always)
 public func applyHannWindow(_ samples: [Float]) -> [Float] {
-    let count = samples.count
-    guard count > 0 else { return samples }
+    let n = samples.count
+    guard n > 1 else { return samples }
 
-    var window = [Float](repeating: 0, count: count)
-    vDSP_hann_window(
-        &window,
-        vDSP_Length(count),
-        Int32(vDSP_HANN_NORM)
-    )
+    var out = [Float](repeating: 0, count: n)
+    let denom = Float(n - 1)
+    let twoPi = Float.pi * 2
 
-    var windowed = samples
-    vDSP_vmul(
-        samples,
-        1,
-        window,
-        1,
-        &windowed,
-        1,
-        vDSP_Length(count)
-    )
+    for i in 0..<n {
+        let w = 0.5 * (1 - cos(twoPi * Float(i) / denom))
+        out[i] = samples[i] * w
+    }
 
-    return windowed
+    return out
 }

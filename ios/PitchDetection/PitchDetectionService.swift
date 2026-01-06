@@ -1,12 +1,34 @@
 import Foundation
 
+// MARK: - PitchDetectionService
+// --------------------------------------------------
+// JS parity implementation.
+// Mirrors services/audio/PitchDetectionService.ts
+//
+// Responsibilities:
+// - YIN pitch detection (RAW buffer)
+// - Zero-crossing fallback (HANN windowed)
+// - Confidence gating
+// - Frequency range gating
+// - Frequency → Note conversion
+//
+// IMPORTANT:
+// - No RMS / amplitude gate here
+// - No onset / silence logic here
+// - No smoothing filter here
+// --------------------------------------------------
+
 final class PitchDetectionService {
+
+    // MARK: - Config & State
 
     private var config: PitchDetectionConfig
     private var isActive: Bool = false
 
-    // Core algorithm
-    private var yin: YinPitchDetector
+    // Core DSP
+    private let yin: YinPitchDetector
+
+    // MARK: - Init
 
     init(config: PitchDetectionConfig = PitchDefaults.DEFAULT_CONFIG) {
         self.config = config
@@ -16,6 +38,8 @@ final class PitchDetectionService {
             bufferSize: config.bufferSize
         )
     }
+
+    // MARK: - Lifecycle
 
     func start() {
         isActive = true
@@ -33,7 +57,7 @@ final class PitchDetectionService {
 
     func setSampleRate(_ sampleRate: Double) {
         guard sampleRate > 0 else { return }
-        if sampleRate == config.sampleRate { return }
+        guard sampleRate != config.sampleRate else { return }
 
         config.sampleRate = sampleRate
         yin.setSampleRate(sampleRate)
@@ -41,70 +65,112 @@ final class PitchDetectionService {
         print("[PitchDetection] sample rate updated → \(sampleRate)")
     }
 
-    /// Consumes a NOTE-sized PCM frame and returns AudioDetection payload dict or nil.
-    func processSamples(samples: [Float], timestampMs: Int, amplitude: Double) -> [String: Any]? {
+    // MARK: - Main Processing (JS parity)
+
+    /// NOTE-sized buffer expected (native guarantees size)
+    func processSamples(
+        samples: [Float],
+        timestampMs: Int,
+        amplitude: Double
+    ) -> [String: Any]? {
+
         guard isActive else { return nil }
         guard samples.count == config.bufferSize else { return nil }
 
-        // STEP 1 — Primary: YIN
-        var result: PitchResult? = nil
-        
-        if let yinResult = yin.detect(samples: samples) {
-            result = PitchResult(
-                frequency: yinResult.frequency,
-                confidence: yinResult.confidence,
-                periodicity: yinResult.periodicity
+        // --------------------------------------------------
+        // STEP 1 — Primary: YIN (RAW buffer, no window)
+        // --------------------------------------------------
+        var yinResult = yin.detect(samples: samples)
+
+        // --------------------------------------------------
+        // STEP 2 — Fallback: Zero-crossing
+        // JS parity: uses HANN-windowed signal
+        // --------------------------------------------------
+        if yinResult == nil {
+            let windowed = applyHannWindow(samples)
+
+            guard let fallbackFreq = estimateFrequencyZeroCrossing(
+                samples: windowed,
+                sampleRate: config.sampleRate
+            ) else {
+                return nil
+            }
+
+            yinResult = YinResult(
+                frequency: fallbackFreq,
+                confidence: 0.85,
+                periodicity: 0.5
             )
         }
 
-        // STEP 2 — Fallback: Zero-crossing (ONLY for weak signals / low strings)
-        if result == nil {
+        guard let result = yinResult else { return nil }
 
-            // RMS gate: fallback sadece zayıf sinyalde
-            if amplitude < 0.01 {
-                if let fallbackFreq = ZeroCrossing.estimateFrequency(
-                    samples: samples,
-                    sampleRate: config.sampleRate
-                ) {
-                    result = PitchResult(
-                        frequency: fallbackFreq,
-                        confidence: 0.85,
-                        periodicity: 0.5
-                    )
-                } else {
-                    return nil
-                }
-            } else {
-                // Güçlü sinyal var ama YIN başarısız → sessizlik gibi davran
-                return nil
-            }
-        }
-
-        guard let pitch = result else { return nil }
-
-        // STEP 3 — Confidence gating (low notes slightly weaker allowed)
-        let isLow = pitch.frequency < 110.0
+        // --------------------------------------------------
+        // STEP 3 — Confidence gating
+        // Low notes (E2–D3) allowed weaker confidence
+        // --------------------------------------------------
+        let isLow = result.frequency < 110.0
         let minConf = isLow ? 0.5 : config.minConfidence
 
-        if pitch.confidence < minConf {
+        guard result.confidence >= minConf else {
             return nil
         }
 
-        // STEP 4 — Range gating
-        if pitch.frequency < config.minFrequency || pitch.frequency > config.maxFrequency {
+        // --------------------------------------------------
+        // STEP 4 — Frequency range gating
+        // --------------------------------------------------
+        guard
+            result.frequency >= config.minFrequency,
+            result.frequency <= config.maxFrequency
+        else {
             return nil
         }
 
+        // --------------------------------------------------
         // STEP 5 — Frequency → Note
-        let note = MusicTheory.frequencyToNote(pitch.frequency, confidence: pitch.confidence)
+        // --------------------------------------------------
+        let note = MusicTheory.frequencyToNote(
+            result.frequency,
+            confidence: result.confidence
+        )
 
-        // FINAL — Contract payload
+        // --------------------------------------------------
+        // FINAL — Payload
+        // --------------------------------------------------
         return AudioDetectionPayload.note(
             timestampMs: timestampMs,
-            frequency: pitch.frequency,
+            frequency: result.frequency,
             amplitude: amplitude,
-            confidence: pitch.confidence,
+            confidence: result.confidence,
             note: note
         )
+    }
+
+    // MARK: - Zero Crossing (JS parity)
+
+    private func estimateFrequencyZeroCrossing(
+        samples: [Float],
+        sampleRate: Double
+    ) -> Double? {
+
+        guard samples.count > 1 else { return nil }
+        guard sampleRate > 0 else { return nil }
+
+        var crossings = 0
+        var prev = samples[0]
+
+        for i in 1..<samples.count {
+            let curr = samples[i]
+            if (prev <= 0 && curr > 0) || (prev >= 0 && curr < 0) {
+                crossings += 1
+            }
+            prev = curr
+        }
+
+        let duration = Double(samples.count) / sampleRate
+        guard duration > 0 else { return nil }
+        guard crossings >= 2 else { return nil }
+
+        return Double(crossings) / (2.0 * duration)
     }
 }

@@ -2,24 +2,13 @@
 //  ChordDecision.swift
 //  SmartTabGuitarKaraoke
 //
-//  Chooses the best chord candidate based on
-//  cosine similarity scores.
-//  Mirrors services/chord/utils/decision.ts
+//  JS parity – best cosine similarity wins
 //
 
 import Foundation
 
-/// Minimum similarity score required
-/// to accept a chord candidate.
 private let MIN_CONFIDENCE: Double = 0.65
 
-/// Finds the best matching chord candidate
-/// for a given chroma vector.
-///
-/// - Parameters:
-///   - chroma: 12-dimensional chroma vector
-///   - templates: all resolved chord templates
-/// - Returns: best ChordCandidate or nil
 public func findBestChordCandidate(
     chroma: ChromaVector,
     templates: [ResolvedChordTemplate]
