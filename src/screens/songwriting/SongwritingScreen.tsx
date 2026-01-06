@@ -2,17 +2,34 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Text, TextInput, Button, Card, Chip } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { RootStackParamList } from '@/navigation/types';
+import { PracticeTab } from '@/types/practice/PracticeTab';
+import { PracticeStep } from '@/types/practice/PracticeStep';
 import colors from '@/theme/colors';
 
-const NOTES = ['E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B', 'C', 'C#', 'D', 'D#'];
+type Nav = StackNavigationProp<RootStackParamList, 'Songwriting'>;
+
 const FRETS = Array.from({ length: 25 }, (_, i) => i); // 0-24 frets
+const COMMON_CHORDS = [
+  'C', 'D', 'E', 'F', 'G', 'A', 'B',
+  'Cm', 'Dm', 'Em', 'Fm', 'Gm', 'Am', 'Bm',
+  'C7', 'D7', 'E7', 'F7', 'G7', 'A7', 'B7',
+];
+
+const CUSTOM_SONGS_KEY = '@custom_songs';
 
 export default function SongwritingScreen() {
+  const navigation = useNavigation<Nav>();
   const [songTitle, setSongTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [bpm, setBpm] = useState('120');
   const [difficulty, setDifficulty] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
   const [selectedString, setSelectedString] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+  const [inputMode, setInputMode] = useState<'note' | 'chord'>('note');
+  const [selectedChord, setSelectedChord] = useState('');
   const [steps, setSteps] = useState<Array<{ type: 'note' | 'chord' | 'rest'; data: any }>>([]);
 
   const addNote = (fret: number) => {
@@ -24,6 +41,18 @@ export default function SongwritingScreen() {
       },
     };
     setSteps([...steps, newStep]);
+  };
+
+  const addChord = (chordName: string) => {
+    const newStep = {
+      type: 'chord' as const,
+      data: {
+        chordName,
+        strum: 'down',
+      },
+    };
+    setSteps([...steps, newStep]);
+    setSelectedChord(chordName);
   };
 
   const addRest = () => {
@@ -49,7 +78,7 @@ export default function SongwritingScreen() {
     );
   };
 
-  const saveSong = () => {
+  const saveSong = async () => {
     if (!songTitle.trim()) {
       Alert.alert('Error', 'Please enter a song title');
       return;
@@ -60,8 +89,82 @@ export default function SongwritingScreen() {
       return;
     }
 
-    // TODO: Implement save functionality
-    Alert.alert('Success', 'Song saved! (Save functionality to be implemented)');
+    try {
+      // Convert steps to PracticeStep format
+      const practiceSteps: PracticeStep[] = steps.map((step) => {
+        if (step.type === 'note') {
+          return {
+            type: 'note',
+            position: {
+              string: step.data.string,
+              fret: step.data.fret,
+            },
+          } as PracticeStep;
+        } else if (step.type === 'chord') {
+          return {
+            type: 'chord',
+            chordName: step.data.chordName,
+            strum: step.data.strum,
+          } as PracticeStep;
+        } else {
+          return {
+            type: 'rest',
+          } as PracticeStep;
+        }
+      });
+
+      // Create PracticeTab object
+      const newSong: PracticeTab = {
+        id: `custom-${Date.now()}`,
+        metadata: {
+          title: songTitle,
+          artist: artist || 'Unknown Artist',
+          difficulty,
+          bpm: parseInt(bpm) || 120,
+          timeSignature: {
+            numerator: 4,
+            denominator: 4,
+          },
+        },
+        steps: practiceSteps,
+      };
+
+      // Load existing custom songs
+      const existingSongsJson = await AsyncStorage.getItem(CUSTOM_SONGS_KEY);
+      const existingSongs: PracticeTab[] = existingSongsJson
+        ? JSON.parse(existingSongsJson)
+        : [];
+
+      // Add new song
+      existingSongs.push(newSong);
+
+      // Save back to storage
+      await AsyncStorage.setItem(CUSTOM_SONGS_KEY, JSON.stringify(existingSongs));
+
+      Alert.alert(
+        'Success',
+        `Song "${songTitle}" saved successfully!`,
+        [
+          {
+            text: 'Create Another',
+            onPress: () => {
+              setSongTitle('');
+              setArtist('');
+              setBpm('120');
+              setDifficulty('beginner');
+              setSteps([]);
+            },
+          },
+          {
+            text: 'Go to Library',
+            onPress: () => navigation.navigate('Library'),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Error saving song:', error);
+      Alert.alert('Error', 'Failed to save song. Please try again.');
+    }
   };
 
   return (
@@ -138,48 +241,106 @@ export default function SongwritingScreen() {
           </Card.Content>
         </Card>
 
-        {/* String Selection */}
+        {/* Input Mode Selection */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>Select String</Text>
-            <View style={styles.stringRow}>
-              {[1, 2, 3, 4, 5, 6].map((string) => (
-                <Chip
-                  key={string}
-                  selected={selectedString === string}
-                  onPress={() => setSelectedString(string as any)}
-                  style={styles.stringChip}
-                  selectedColor={colors.utility.accent}
-                >
-                  {string}
-                </Chip>
-              ))}
+            <Text style={styles.sectionTitle}>Input Mode</Text>
+            <View style={styles.difficultyRow}>
+              <Chip
+                selected={inputMode === 'note'}
+                onPress={() => setInputMode('note')}
+                style={styles.chip}
+                selectedColor={colors.brand.primary}
+              >
+                Notes
+              </Chip>
+              <Chip
+                selected={inputMode === 'chord'}
+                onPress={() => setInputMode('chord')}
+                style={styles.chip}
+                selectedColor={colors.brand.primary}
+              >
+                Chords
+              </Chip>
             </View>
           </Card.Content>
         </Card>
 
-        {/* Fret Selection */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>Add Note (Fret)</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.fretRow}>
-                {FRETS.slice(0, 13).map((fret) => (
-                  <Button
-                    key={fret}
-                    mode="contained"
-                    onPress={() => addNote(fret)}
-                    style={styles.fretButton}
-                    buttonColor={fret === 0 ? colors.feedback.correct : colors.brand.primary}
-                    compact
+        {/* String Selection - Only for notes */}
+        {inputMode === 'note' && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Select String</Text>
+              <View style={styles.stringRow}>
+                {[1, 2, 3, 4, 5, 6].map((string) => (
+                  <Chip
+                    key={string}
+                    selected={selectedString === string}
+                    onPress={() => setSelectedString(string as any)}
+                    style={styles.stringChip}
+                    selectedColor={colors.utility.accent}
                   >
-                    {fret}
-                  </Button>
+                    {string}
+                  </Chip>
                 ))}
               </View>
-            </ScrollView>
-          </Card.Content>
-        </Card>
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* Fret Selection - Only for notes */}
+        {inputMode === 'note' && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Add Note (Fret)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.fretRow}>
+                  {FRETS.slice(0, 13).map((fret) => (
+                    <Button
+                      key={fret}
+                      mode="contained"
+                      onPress={() => addNote(fret)}
+                      style={styles.fretButton}
+                      buttonColor={fret === 0 ? colors.feedback.correct : colors.brand.primary}
+                      compact
+                    >
+                      {fret}
+                    </Button>
+                  ))}
+                </View>
+              </ScrollView>
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* Chord Selection - Only for chords */}
+        {inputMode === 'chord' && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Add Chord</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.fretRow}>
+                  {COMMON_CHORDS.map((chord) => (
+                    <Button
+                      key={chord}
+                      mode="contained"
+                      onPress={() => addChord(chord)}
+                      style={styles.chordButton}
+                      buttonColor={
+                        selectedChord === chord
+                          ? colors.utility.accent
+                          : colors.brand.primary
+                      }
+                      compact
+                    >
+                      {chord}
+                    </Button>
+                  ))}
+                </View>
+              </ScrollView>
+            </Card.Content>
+          </Card>
+        )}
 
         {/* Add Rest */}
         <Card style={styles.card}>
@@ -207,6 +368,10 @@ export default function SongwritingScreen() {
                       {step.type === 'note' ? (
                         <Text style={styles.stepText}>
                           S{step.data.string}:F{step.data.fret}
+                        </Text>
+                      ) : step.type === 'chord' ? (
+                        <Text style={styles.stepText}>
+                          {step.data.chordName}
                         </Text>
                       ) : (
                         <Text style={styles.stepText}>Rest</Text>
@@ -320,6 +485,9 @@ const styles = StyleSheet.create({
   },
   fretButton: {
     minWidth: 50,
+  },
+  chordButton: {
+    minWidth: 60,
   },
   stepsRow: {
     flexDirection: 'row',
