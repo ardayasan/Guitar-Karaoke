@@ -133,9 +133,10 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     // Guard: bounds check
     if (currentStepIndex >= hydratedSteps.length) return;
 
-    // Guard: only if not already marked correct (allow recovery from incorrect)
     const currentStep = hydratedSteps[currentStepIndex];
-    if (currentStep.result === 'correct') return;
+
+    // If already processed (correct and stats updated), just advance
+    const wasAlreadyCorrect = currentStep.result === 'correct';
 
     // Mark current step as correct
     const updatedSteps = [...hydratedSteps];
@@ -145,21 +146,23 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       result: 'correct'
     };
 
-    // Update stats
+    // Update stats only if not already counted
     const newStats = { ...stats };
-    newStats.correct++;
+    if (!wasAlreadyCorrect) {
+      newStats.correct++;
 
-    // If this step was previously marked incorrect, count it in stats
-    if (wasIncorrect) {
-      newStats.incorrect++;
-      newStats.currentStreak = 0; // Reset streak due to earlier mistake
-    } else {
-      newStats.currentStreak++;
-      newStats.longestStreak = Math.max(newStats.longestStreak, newStats.currentStreak);
+      // If this step was previously marked incorrect, count it in stats
+      if (wasIncorrect) {
+        newStats.incorrect++;
+        newStats.currentStreak = 0; // Reset streak due to earlier mistake
+      } else {
+        newStats.currentStreak++;
+        newStats.longestStreak = Math.max(newStats.longestStreak, newStats.currentStreak);
+      }
+
+      const evaluated = newStats.correct + newStats.incorrect + newStats.missed;
+      newStats.accuracy = evaluated > 0 ? (newStats.correct / evaluated) * 100 : 0;
     }
-
-    const evaluated = newStats.correct + newStats.incorrect + newStats.missed;
-    newStats.accuracy = evaluated > 0 ? (newStats.correct / evaluated) * 100 : 0;
 
     // Advance to next step
     const nextIndex = currentStepIndex + 1;

@@ -38,6 +38,7 @@ type PracticeScreenNavigationProp =
 // Debounce settings
 const CORRECT_DEBOUNCE_MS = 500;  // After correct match
 const INPUT_DEBOUNCE_MS = 300;    // Between any input processing
+const ADVANCE_DELAY_MS = 600;     // Delay before advancing to next step after correct
 
 export default function PracticeScreen() {
   const route = useRoute<PracticeScreenRouteProp>();
@@ -48,6 +49,7 @@ export default function PracticeScreen() {
   const pipelineRef = useRef<AudioPipeline | null>(null);
   const metronomeRef = useRef<MetronomeService | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const advanceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   /* ---------- Debounce refs ---------- */
   // Track the step index where we last had a correct match
@@ -77,6 +79,7 @@ export default function PracticeScreen() {
   const [isListening, setIsListening] = useState(false);
   const [debugMsg, setDebugMsg] = useState<string>("");
   const [isMetronomeOn, setIsMetronomeOn] = useState(false);
+  const [hasCompleted, setHasCompleted] = useState(false);
 
   /* ================================================= */
   /* INIT + CLEANUP                                   */
@@ -94,6 +97,10 @@ export default function PracticeScreen() {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
+      }
+      if (advanceTimeoutRef.current) {
+        clearTimeout(advanceTimeoutRef.current);
+        advanceTimeoutRef.current = null;
       }
       resetPractice();
     };
@@ -186,12 +193,24 @@ export default function PracticeScreen() {
           return; // Skip - already processed this step as correct
         }
 
-        // Mark correct and advance
+        // Mark correct and advance after delay
         lastCorrectStepRef.current = stepIdx;
         lastCorrectTimeRef.current = now;
         lastInputTimeRef.current = now;
         lastDetectedValueRef.current = detectedValue;
-        markCorrectAndAdvance();
+
+        // Clear any existing advance timeout
+        if (advanceTimeoutRef.current) {
+          clearTimeout(advanceTimeoutRef.current);
+        }
+
+        // Mark correct immediately for visual feedback
+        setStepResult(stepIdx, 'correct');
+
+        // Advance after delay to give user time to see green
+        advanceTimeoutRef.current = setTimeout(() => {
+          markCorrectAndAdvance();
+        }, ADVANCE_DELAY_MS);
       } else {
         // Incorrect - mark red with debounce to prevent spam
         lastInputTimeRef.current = now;
@@ -237,7 +256,19 @@ export default function PracticeScreen() {
         lastCorrectTimeRef.current = now;
         lastInputTimeRef.current = now;
         lastDetectedValueRef.current = detectedValue;
-        markCorrectAndAdvance();
+
+        // Clear any existing advance timeout
+        if (advanceTimeoutRef.current) {
+          clearTimeout(advanceTimeoutRef.current);
+        }
+
+        // Mark correct immediately for visual feedback
+        setStepResult(stepIdx, 'correct');
+
+        // Advance after delay to give user time to see green
+        advanceTimeoutRef.current = setTimeout(() => {
+          markCorrectAndAdvance();
+        }, ADVANCE_DELAY_MS);
       } else {
         lastInputTimeRef.current = now;
         lastDetectedValueRef.current = detectedValue;
@@ -254,6 +285,14 @@ export default function PracticeScreen() {
   /* ================================================= */
   const handleStartListening = () => {
     if (!pipelineRef.current) return;
+
+    // If restarting after completion, reset the practice
+    if (hasCompleted) {
+      resetPractice();
+      startPractice(tab);
+      setHasCompleted(false);
+    }
+
     lastCorrectStepRef.current = -1;
     lastCorrectTimeRef.current = 0;
     lastInputTimeRef.current = 0;
@@ -333,6 +372,7 @@ export default function PracticeScreen() {
     if (isComplete && isListening) {
       completePractice();
       handleStopListening();
+      setHasCompleted(true);
     }
   }, [isComplete, isListening]);
 
@@ -444,7 +484,9 @@ export default function PracticeScreen() {
         <View style={styles.controlsRow}>
           {!isListening ? (
             <View style={styles.startBtn} onTouchEnd={handleStartListening}>
-              <Text style={styles.startBtnText}>▶ Start</Text>
+              <Text style={styles.startBtnText}>
+                {hasCompleted ? '🔄 Restart' : '▶ Start'}
+              </Text>
             </View>
           ) : (
             <View style={styles.listeningBtn}>
