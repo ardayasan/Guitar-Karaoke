@@ -1,8 +1,10 @@
 // src/store/practice/practiceStore.types.ts
 
 import { PracticeTab } from '@/types/practice/PracticeTab';
-import { PracticeStep } from '@/types/practice/PracticeStep';
-import { HydratedStep } from '@/utils/practice/hydrateStepTiming';
+import { PreparedStep } from '@/utils/practice/hydrateStepTiming';
+
+// Re-export for backwards compatibility
+export type HydratedStep = PreparedStep;
 
 export interface PracticeStats {
     totalSteps: number;
@@ -18,16 +20,14 @@ export interface PracticeState {
     /* ---------- State ---------- */
     isActive: boolean;
     isPaused: boolean;
-    startTime: number | null;
-    currentTime: number;
 
     tab: PracticeTab | null;
 
-    /** BPM-hydrated steps with timing info */
-    hydratedSteps: HydratedStep[];
+    /** Prepared steps with index and result */
+    hydratedSteps: PreparedStep[];
 
     currentStepIndex: number;
-    currentStep: HydratedStep | null;
+    currentStep: PreparedStep | null;
 
     lastDetectedNote: { name: string; octave: number } | null;
     lastDetectedChord: { root: string; type: string } | null;
@@ -40,22 +40,19 @@ export interface PracticeState {
     resumePractice: () => void;
     stopPractice: () => void;
 
-    updateTime: (time: number) => void;
     setDetectedNote: (note: { name: string; octave: number } | null) => void;
     setDetectedChord: (chord: { root: string; type: string } | null) => void;
 
-    /** Set the current step index based on elapsed time */
-    setCurrentStepByTime: (elapsedMs: number) => void;
+    /** Mark current step correct and advance to next (input-driven) */
+    markCorrectAndAdvance: () => void;
+
+    /** Mark current step incorrect and pause practice */
+    markIncorrectAndPause: () => void;
 
     /** Mark a specific step with a result */
     setStepResult: (index: number, result: 'correct' | 'incorrect' | 'missed') => void;
 
     advanceStep: () => void;
 
-    markCorrect: () => void;
-    markIncorrect: () => void;
-    markMissed: () => void;
-
     resetPractice: () => void;
 }
-
