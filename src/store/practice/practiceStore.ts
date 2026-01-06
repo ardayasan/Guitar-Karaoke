@@ -1,9 +1,9 @@
 // src/store/practice/practice.store.ts
 //
-// Input-driven practice store - NO BPM timing
+// Input-driven practice store with timing
 
 import { create } from 'zustand';
-import { PracticeState, PracticeStats } from './practiceStore.types';
+import { PracticeState, PracticeStats, TimingStats } from './practiceStore.types';
 import { PracticeTab } from '@/types/practice/PracticeTab';
 import { prepareSteps, PreparedStep } from '@/utils/practice/hydrateStepTiming';
 
@@ -15,6 +15,15 @@ const initialStats: PracticeStats = {
   currentStreak: 0,
   longestStreak: 0,
   accuracy: 0,
+};
+
+const initialTimingStats: TimingStats = {
+  startTime: null,
+  elapsedMs: 0,
+  expectedDurationMs: 0,
+  isOvertime: false,
+  previousAttemptMs: null,
+  speedFeedback: null,
 };
 
 export const usePracticeStore = create<PracticeState>((set, get) => ({
@@ -30,13 +39,19 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   lastDetectedNote: null,
   lastDetectedChord: null,
   stats: { ...initialStats },
+  timingStats: { ...initialTimingStats },
 
   /* ---------- Actions ---------- */
 
   startPractice: (tab: PracticeTab) => {
-    // Prepare steps with indexing (no timing)
+    // Prepare steps with indexing
     const hydratedSteps = prepareSteps(tab.steps);
     const firstStep = hydratedSteps[0] ?? null;
+
+    // Calculate expected duration based on BPM and step count
+    // Assumption: each step takes one beat
+    const beatsPerSecond = tab.metadata.bpm / 60;
+    const expectedDurationMs = (hydratedSteps.length / beatsPerSecond) * 1000;
 
     set({
       isActive: true,
@@ -48,6 +63,14 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       stats: {
         ...initialStats,
         totalSteps: hydratedSteps.length,
+      },
+      timingStats: {
+        startTime: Date.now(),
+        elapsedMs: 0,
+        expectedDurationMs,
+        isOvertime: false,
+        previousAttemptMs: get().timingStats.elapsedMs || null,
+        speedFeedback: null,
       },
       lastDetectedNote: null,
       lastDetectedChord: null,
@@ -102,7 +125,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
   /**
    * Mark current step correct and advance to next.
-   * GUARD: Only executes if current step is pending (prevents double-evaluation)
+   * GUARD: Only executes if current step is pending or incorrect (prevents double-evaluation)
    */
   markCorrectAndAdvance: () => {
     const { hydratedSteps, currentStepIndex, stats } = get();
@@ -116,6 +139,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
     // Mark current step as correct
     const updatedSteps = [...hydratedSteps];
+    const wasIncorrect = currentStep.result === 'incorrect';
     updatedSteps[currentStepIndex] = {
       ...updatedSteps[currentStepIndex],
       result: 'correct'
@@ -124,8 +148,16 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     // Update stats
     const newStats = { ...stats };
     newStats.correct++;
-    newStats.currentStreak++;
-    newStats.longestStreak = Math.max(newStats.longestStreak, newStats.currentStreak);
+
+    // If this step was previously marked incorrect, count it in stats
+    if (wasIncorrect) {
+      newStats.incorrect++;
+      newStats.currentStreak = 0; // Reset streak due to earlier mistake
+    } else {
+      newStats.currentStreak++;
+      newStats.longestStreak = Math.max(newStats.longestStreak, newStats.currentStreak);
+    }
+
     const evaluated = newStats.correct + newStats.incorrect + newStats.missed;
     newStats.accuracy = evaluated > 0 ? (newStats.correct / evaluated) * 100 : 0;
 
@@ -174,41 +206,22 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   },
 
   /**
-   * Mark a specific step with a result and update stats.
+   * Mark a specific step with a result (does NOT update stats).
+   * This is used for visual feedback only - stats are updated when advancing.
    */
   setStepResult: (index: number, result: 'correct' | 'incorrect' | 'missed') => {
-    const { hydratedSteps, stats } = get();
+    const { hydratedSteps } = get();
 
     if (index < 0 || index >= hydratedSteps.length) return;
 
-    // Update the step result
+    // Only update the step result visually
     const updatedSteps = [...hydratedSteps];
+    const previousResult = updatedSteps[index].result;
     updatedSteps[index] = { ...updatedSteps[index], result };
-
-    // Update stats
-    const newStats = { ...stats };
-
-    if (result === 'correct') {
-      newStats.correct++;
-      newStats.currentStreak++;
-      newStats.longestStreak = Math.max(newStats.longestStreak, newStats.currentStreak);
-    } else if (result === 'incorrect') {
-      newStats.incorrect++;
-      newStats.currentStreak = 0;
-    } else if (result === 'missed') {
-      newStats.missed++;
-      newStats.currentStreak = 0;
-    }
-
-    // Recalculate accuracy
-    const evaluated = newStats.correct + newStats.incorrect + newStats.missed;
-    newStats.accuracy = evaluated > 0
-      ? (newStats.correct / evaluated) * 100
-      : 0;
 
     set({
       hydratedSteps: updatedSteps,
-      stats: newStats,
+      currentStep: index === get().currentStepIndex ? updatedSteps[index] : get().currentStep,
     });
   },
 
@@ -224,6 +237,45 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     });
   },
 
+  updateElapsedTime: (elapsedMs: number) => {
+    const { timingStats } = get();
+    const isOvertime = elapsedMs > timingStats.expectedDurationMs;
+
+    set({
+      timingStats: {
+        ...timingStats,
+        elapsedMs,
+        isOvertime,
+      },
+    });
+  },
+
+  completePractice: () => {
+    const { timingStats } = get();
+    const elapsedMs = timingStats.elapsedMs;
+    const expectedMs = timingStats.expectedDurationMs;
+    const previousMs = timingStats.previousAttemptMs;
+
+    let speedFeedback: 'faster' | 'slower' | 'on-time' | null = null;
+
+    // Determine speed feedback
+    const tolerance = expectedMs * 0.1; // 10% tolerance
+    if (elapsedMs > expectedMs + tolerance) {
+      speedFeedback = 'slower';
+    } else if (elapsedMs < expectedMs - tolerance) {
+      speedFeedback = 'faster';
+    } else {
+      speedFeedback = 'on-time';
+    }
+
+    set({
+      timingStats: {
+        ...timingStats,
+        speedFeedback,
+      },
+    });
+  },
+
   resetPractice: () =>
     set({
       isActive: false,
@@ -235,5 +287,6 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       lastDetectedNote: null,
       lastDetectedChord: null,
       stats: { ...initialStats },
+      timingStats: { ...initialTimingStats },
     }),
 }));

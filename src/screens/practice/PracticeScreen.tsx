@@ -20,6 +20,7 @@ import { RootStackParamList } from "@/navigation/types";
 import { usePracticeStore } from "@/store";
 import colors from "@/theme/colors";
 import { AudioPipeline } from "@/services/audio/AudioPipeline";
+import { MetronomeService } from "@/services/audio/MetronomeService";
 
 // UI Components
 import PracticeHeader from "./components/PracticeHeader";
@@ -34,8 +35,9 @@ type PracticeScreenNavigationProp =
 
 /* ================================================= */
 
-// Debounce after CORRECT match (not after incorrect)
-const CORRECT_DEBOUNCE_MS = 500;
+// Debounce settings
+const CORRECT_DEBOUNCE_MS = 500;  // After correct match
+const INPUT_DEBOUNCE_MS = 300;    // Between any input processing
 
 export default function PracticeScreen() {
   const route = useRoute<PracticeScreenRouteProp>();
@@ -44,11 +46,17 @@ export default function PracticeScreen() {
 
   /* ---------- Audio pipeline ---------- */
   const pipelineRef = useRef<AudioPipeline | null>(null);
+  const metronomeRef = useRef<MetronomeService | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   /* ---------- Debounce refs ---------- */
   // Track the step index where we last had a correct match
   const lastCorrectStepRef = useRef<number>(-1);
   const lastCorrectTimeRef = useRef<number>(0);
+
+  // Track last input time to prevent rapid re-processing
+  const lastInputTimeRef = useRef<number>(0);
+  const lastDetectedValueRef = useRef<string>('');
 
   /* ---------- Store (for rendering) ---------- */
   const {
@@ -58,13 +66,17 @@ export default function PracticeScreen() {
     lastDetectedNote,
     lastDetectedChord,
     stats,
+    timingStats,
     startPractice,
     stopPractice,
     resetPractice,
+    updateElapsedTime,
+    completePractice,
   } = usePracticeStore();
 
   const [isListening, setIsListening] = useState(false);
   const [debugMsg, setDebugMsg] = useState<string>("");
+  const [isMetronomeOn, setIsMetronomeOn] = useState(false);
 
   /* ================================================= */
   /* INIT + CLEANUP                                   */
@@ -72,13 +84,43 @@ export default function PracticeScreen() {
   useEffect(() => {
     startPractice(tab);
     pipelineRef.current = new AudioPipeline();
+    metronomeRef.current = new MetronomeService();
 
     return () => {
       pipelineRef.current?.stop();
       pipelineRef.current = null;
+      metronomeRef.current?.destroy();
+      metronomeRef.current = null;
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       resetPractice();
     };
   }, [tab, startPractice, resetPractice]);
+
+  /* ================================================= */
+  /* TIMER                                             */
+  /* ================================================= */
+  useEffect(() => {
+    if (!isListening || !timingStats.startTime) {
+      return;
+    }
+
+    // Update elapsed time every 100ms
+    timerRef.current = setInterval(() => {
+      const now = Date.now();
+      const elapsed = now - (timingStats.startTime || now);
+      updateElapsedTime(elapsed);
+    }, 100);
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [isListening, timingStats.startTime, updateElapsedTime]);
 
   /* ================================================= */
   /* DETECTION HANDLER                                 */
@@ -115,6 +157,15 @@ export default function PracticeScreen() {
     if (detection.note && step.type === 'note') {
       const detectedName = String(detection.note.name).toUpperCase().trim();
       const detectedOctave = detection.note.octave;
+      const detectedValue = `${detectedName}${detectedOctave}`;
+
+      // General input debounce: prevent processing same note too rapidly
+      if (
+        detectedValue === lastDetectedValueRef.current &&
+        now - lastInputTimeRef.current < INPUT_DEBOUNCE_MS
+      ) {
+        return; // Skip - same note detected too soon
+      }
 
       setDetectedNote({ name: detectedName, octave: detectedOctave });
 
@@ -138,13 +189,16 @@ export default function PracticeScreen() {
         // Mark correct and advance
         lastCorrectStepRef.current = stepIdx;
         lastCorrectTimeRef.current = now;
+        lastInputTimeRef.current = now;
+        lastDetectedValueRef.current = detectedValue;
         markCorrectAndAdvance();
       } else {
-        // Incorrect - mark red but DON'T debounce (allow re-tries)
+        // Incorrect - mark red with debounce to prevent spam
+        lastInputTimeRef.current = now;
+        lastDetectedValueRef.current = detectedValue;
         if (step.result !== 'incorrect') {
           setStepResult(stepIdx, 'incorrect');
         }
-        // No debounce update - allow immediate re-tries
       }
       return;
     }
@@ -153,13 +207,19 @@ export default function PracticeScreen() {
     if (detection.chord && step.type === 'chord') {
       const detectedRoot = String(detection.chord.root).toUpperCase().trim();
       const detectedType = String(detection.chord.type || '').toLowerCase();
+      const detectedValue = `${detectedRoot}${detectedType}`;
+
+      // General input debounce: prevent processing same chord too rapidly
+      if (
+        detectedValue === lastDetectedValueRef.current &&
+        now - lastInputTimeRef.current < INPUT_DEBOUNCE_MS
+      ) {
+        return; // Skip - same chord detected too soon
+      }
 
       setDetectedChord({ root: detectedRoot, type: detectedType });
 
       const expectedChord = String(step.chordName).toUpperCase().trim();
-      const detectedChord = detectedType === 'minor'
-        ? `${detectedRoot}M`
-        : detectedRoot;
 
       const isCorrect =
         expectedChord === detectedRoot ||
@@ -175,8 +235,12 @@ export default function PracticeScreen() {
 
         lastCorrectStepRef.current = stepIdx;
         lastCorrectTimeRef.current = now;
+        lastInputTimeRef.current = now;
+        lastDetectedValueRef.current = detectedValue;
         markCorrectAndAdvance();
       } else {
+        lastInputTimeRef.current = now;
+        lastDetectedValueRef.current = detectedValue;
         if (step.result !== 'incorrect') {
           setStepResult(stepIdx, 'incorrect');
         }
@@ -192,6 +256,8 @@ export default function PracticeScreen() {
     if (!pipelineRef.current) return;
     lastCorrectStepRef.current = -1;
     lastCorrectTimeRef.current = 0;
+    lastInputTimeRef.current = 0;
+    lastDetectedValueRef.current = '';
     pipelineRef.current.start(handleDetection);
     setIsListening(true);
   };
@@ -199,6 +265,21 @@ export default function PracticeScreen() {
   const handleStopListening = () => {
     pipelineRef.current?.stop();
     setIsListening(false);
+    if (isMetronomeOn && metronomeRef.current) {
+      metronomeRef.current.stop();
+    }
+  };
+
+  const handleToggleMetronome = async () => {
+    if (!metronomeRef.current) return;
+
+    if (isMetronomeOn) {
+      await metronomeRef.current.stop();
+      setIsMetronomeOn(false);
+    } else {
+      await metronomeRef.current.start(tab.metadata.bpm);
+      setIsMetronomeOn(true);
+    }
   };
 
   const handleQuit = () => {
@@ -210,6 +291,13 @@ export default function PracticeScreen() {
   /* ================================================= */
   /* DISPLAY HELPERS                                  */
   /* ================================================= */
+  const formatTime = (ms: number): string => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   const getDetectedText = () => {
     if (lastDetectedChord) {
       return `${lastDetectedChord.root}${lastDetectedChord.type === 'minor' ? 'm' : ''}`;
@@ -240,6 +328,14 @@ export default function PracticeScreen() {
 
   const isComplete = currentStepIndex >= hydratedSteps.length;
 
+  // Check for completion and provide feedback
+  useEffect(() => {
+    if (isComplete && isListening) {
+      completePractice();
+      handleStopListening();
+    }
+  }, [isComplete, isListening]);
+
   /* ================================================= */
   /* RENDER                                           */
   /* ================================================= */
@@ -264,6 +360,22 @@ export default function PracticeScreen() {
           </View>
         ) : null}
 
+        {/* Timer and BPM */}
+        <View style={styles.timerContainer}>
+          <View style={styles.timerBox}>
+            <Text style={styles.timerLabel}>Time</Text>
+            <Text style={styles.timerValue}>{formatTime(timingStats.elapsedMs)}</Text>
+          </View>
+          <View style={styles.timerBox}>
+            <Text style={styles.timerLabel}>Expected</Text>
+            <Text style={styles.timerValue}>{formatTime(timingStats.expectedDurationMs)}</Text>
+          </View>
+          <View style={styles.timerBox}>
+            <Text style={styles.timerLabel}>BPM</Text>
+            <Text style={styles.timerValue}>{tab.metadata.bpm}</Text>
+          </View>
+        </View>
+
         {/* Status */}
         {currentStep?.result === 'incorrect' && (
           <View style={styles.incorrectBanner}>
@@ -274,7 +386,11 @@ export default function PracticeScreen() {
         )}
         {isComplete && (
           <View style={styles.completeBanner}>
-            <Text style={styles.bannerText}>✅ Complete!</Text>
+            <Text style={styles.bannerText}>
+              ✅ Complete! {timingStats.speedFeedback === 'slower' && '⏱️ Try to play faster next time!'}
+              {timingStats.speedFeedback === 'faster' && '🎯 You played faster than expected!'}
+              {timingStats.speedFeedback === 'on-time' && '🎵 Perfect timing!'}
+            </Text>
           </View>
         )}
 
@@ -335,6 +451,14 @@ export default function PracticeScreen() {
               <Text style={styles.listeningBtnText}>🎤 Listening...</Text>
             </View>
           )}
+          <View
+            style={[styles.metronomeBtn, isMetronomeOn && styles.metronomeBtnActive]}
+            onTouchEnd={handleToggleMetronome}
+          >
+            <Text style={[styles.metronomeBtnText, isMetronomeOn && styles.metronomeBtnTextActive]}>
+              {isMetronomeOn ? '🔊' : '🔇'} Metronome
+            </Text>
+          </View>
           <View style={styles.quitBtn} onTouchEnd={handleQuit}>
             <Text style={styles.quitBtnText}>Quit</Text>
           </View>
@@ -430,10 +554,36 @@ const styles = StyleSheet.create({
     color: colors.text.subtle,
     textTransform: 'uppercase',
   },
+  timerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginVertical: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(122,60,255,0.15)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(199,125,255,0.3)',
+  },
+  timerBox: {
+    alignItems: 'center',
+  },
+  timerLabel: {
+    fontSize: 10,
+    color: colors.text.subtle,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  timerValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.utility.accent,
+  },
   controlsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 16,
+    flexWrap: 'wrap',
+    gap: 12,
     marginTop: 16,
   },
   startBtn: {
@@ -458,6 +608,27 @@ const styles = StyleSheet.create({
   listeningBtnText: {
     color: colors.feedback.correct,
     fontSize: 16,
+    fontWeight: '700',
+  },
+  metronomeBtn: {
+    backgroundColor: 'rgba(199,125,255,0.2)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(199,125,255,0.4)',
+  },
+  metronomeBtnActive: {
+    backgroundColor: 'rgba(199,125,255,0.4)',
+    borderColor: colors.utility.accent,
+  },
+  metronomeBtnText: {
+    color: colors.text.subtle,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  metronomeBtnTextActive: {
+    color: colors.utility.accent,
     fontWeight: '700',
   },
   quitBtn: {

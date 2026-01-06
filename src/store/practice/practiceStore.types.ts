@@ -16,6 +16,15 @@ export interface PracticeStats {
     accuracy: number;
 }
 
+export interface TimingStats {
+    startTime: number | null;
+    elapsedMs: number;
+    expectedDurationMs: number;
+    isOvertime: boolean;
+    previousAttemptMs: number | null;
+    speedFeedback: 'faster' | 'slower' | 'on-time' | null;
+}
+
 export interface PracticeState {
     /* ---------- State ---------- */
     isActive: boolean;
@@ -33,6 +42,7 @@ export interface PracticeState {
     lastDetectedChord: { root: string; type: string } | null;
 
     stats: PracticeStats;
+    timingStats: TimingStats;
 
     /* ---------- Actions ---------- */
     startPractice: (tab: PracticeTab) => void;
@@ -53,6 +63,12 @@ export interface PracticeState {
     setStepResult: (index: number, result: 'correct' | 'incorrect' | 'missed') => void;
 
     advanceStep: () => void;
+
+    /** Update elapsed time */
+    updateElapsedTime: (elapsedMs: number) => void;
+
+    /** Complete practice session with timing feedback */
+    completePractice: () => void;
 
     resetPractice: () => void;
 }

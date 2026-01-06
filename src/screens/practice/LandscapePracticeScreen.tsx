@@ -184,7 +184,7 @@ export default function LandscapePracticeScreen() {
         stopPractice,
         setDetectedNote,
         setDetectedChord,
-        setCurrentStepByTime,
+        // setCurrentStepByTime, // TODO: Implement time-based step advancement
         setStepResult,
         resetPractice,
     } = usePracticeStore();
@@ -243,7 +243,8 @@ export default function LandscapePracticeScreen() {
             const now = Date.now();
             const elapsed = now - startTimeRef.current;
             setElapsedMs(elapsed);
-            setCurrentStepByTime(elapsed);
+            // TODO: Implement time-based step advancement
+            // setCurrentStepByTime(elapsed);
         }, 50);
 
         return () => {
@@ -252,7 +253,7 @@ export default function LandscapePracticeScreen() {
                 timerRef.current = null;
             }
         };
-    }, [isListening, isPaused, isActive, setCurrentStepByTime]);
+    }, [isListening, isPaused, isActive]);
 
     /* ================================================= */
     /* STEP EVALUATION                                  */
