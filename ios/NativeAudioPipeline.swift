@@ -14,59 +14,82 @@ final class NativeAudioPipeline {
     private var isSilent = true
     private var lastSignalTimeMs = 0
 
-    // JS parity: chord is “active” if last emitted detection was chord
-    private var chordActive = false
-
-    // MARK: - Timing (JS parity-ish)
+    // ============================================================
+    // MARK: - TUNABLE PARAMETERS (grouped for easy adjustment)
+    // ============================================================
+    
+    // --- Timing ---
     private let SILENCE_TIMEOUT_MS = 400
-    private let CHORD_PROCESS_INTERVAL_MS = 180 // roughly old JS clamp area
-    private var lastChordProcessTimeMs = 0
-
-    // MARK: - Gates (match old JS)
+    private let CHORD_RATE_FACTOR = 1.1
+    private let CHORD_RATE_MIN_MS = 80   // Faster chord processing for lower latency
+    private let CHORD_RATE_MAX_MS = 200
+    
+    // --- RMS Gates ---
+    private let RMS_NOTE_THRESHOLD: Float = 0.0008
+    private let RMS_CHORD_THRESHOLD: Float = 0.008  // Slightly lower for soft strums
+    
+    // --- Note Detection ---
     private let NOTE_CONFIDENCE_THRESHOLD = 0.8
-    private let CHORD_CONFIDENCE_THRESHOLD = 0.66
-
-    // JS side “active pitch class” logic:
-    private let PITCH_CLASS_ENERGY_THRESHOLD = 0.085
+    
+    // --- Chord Detection (relaxed for sensitivity) ---
+    private let CHORD_CONFIDENCE_THRESHOLD = 0.60      // Lowered: rely on structural gates for safety
+    private let CHORD_CONFIDENCE_STRONG = 0.75         // High confidence = immediate activation
+    
+    // --- Pitch Class Thresholds ---
+    private let PITCH_CLASS_ENERGY_THRESHOLD = 0.08    // Slightly lower for soft strums
     private let MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD = 2
-
-    // Template gate (old)
-    private let TEMPLATE_MATCH_THRESHOLD = 0.10
+    private let TEMPLATE_MATCH_THRESHOLD = 0.07        // Lower for imperfect technique
     private let MIN_TEMPLATE_MATCH = 2
-
-    // ------------------------------------------------------------
-    // NEW: Anti “single note -> chord” gates
-    // ------------------------------------------------------------
-
-    /// Keep a small rolling window of recent chroma frames (even if candidate=nil).
+    
+    // --- Anti-Mono Gates (safety) ---
+    private let MONO_DOMINANT_MIN = 0.58               // Slightly stricter on mono detection
+    private let MONO_SECOND_MAX = 0.20                 // If 2nd PC is > 20%, it's likely a chord
+    private let HARMONIC_SUPPRESS_RATIO = 0.30
+    
+    // --- Temporal / Hysteresis ---
+    private let CHROMA_HISTORY_WINDOW_MS = 300         // Shorter for faster response
+    private let COACTIVATION_MIN_FRAMES = 1            // Only 1 frame needed (faster)
+    private let COACTIVATION_ACTIVE_THRESHOLD = 0.08
+    
+    // --- Chord State Hysteresis ---
+    private let CHORD_ENTRY_FRAMES = 1                 // Frames needed to enter chord mode
+    private let CHORD_EXIT_FRAMES = 2                  // Frames without valid chord to exit
+    private let CHORD_HOLD_MS = 150                    // Minimum hold time before exiting chord mode
+    
+    // ============================================================
+    // MARK: - Internal State
+    // ============================================================
+    
+    private var lastChordProcessTimeMs = 0
+    private var cachedChordIntervalMs: Int? = nil
+    private var cachedChordIntervalKey: String? = nil
+    
+    // Chord hysteresis state
+    private var chordActive = false
+    private var chordEntryCounter = 0
+    private var chordExitCounter = 0
+    private var lastChordEmitTimeMs = 0
+    private var pendingChordCandidate: (root: Int, quality: DetectedChordQuality, confidence: Double)? = nil
+    
+    // Chroma history
     private struct ChromaFrame {
         let timestampMs: Int
-        let chroma: [Double] // length 12, normalized sum=1
+        let chroma: [Double]
     }
-
     private var chromaHistory: [ChromaFrame] = []
 
-    /// Temporal window for co-activation checks
-    private let CHROMA_HISTORY_WINDOW_MS = 520  // ~ 3 frames at 180ms + slack
-
-    /// Require chord-like co-activation in recent frames
-    private let COACTIVATION_MIN_FRAMES = 2     // at least 2 frames look chordy
-    private let COACTIVATION_ACTIVE_THRESHOLD = 0.10
-
-    /// Strong monophonic dominance detection (single note / harmonic stack)
-    private let MONO_DOMINANT_MIN = 0.62
-    private let MONO_SECOND_MAX = 0.24
-
-    /// Harmonic suppression ratios (when monophonic dominance is detected)
-    private let HARMONIC_SUPPRESS_RATIO = 0.35
-
+    // ============================================================
     // MARK: - Lifecycle
+    // ============================================================
+    
     func start() {
         isActive = true
         isSilent = true
-        chordActive = false
+        resetChordState()
         lastSignalTimeMs = 0
         lastChordProcessTimeMs = 0
+        cachedChordIntervalMs = nil
+        cachedChordIntervalKey = nil
         chromaHistory = []
 
         pitchService.start()
@@ -80,19 +103,36 @@ final class NativeAudioPipeline {
         isActive = false
         pitchService.stop()
         chordService.stop()
-        chordActive = false
+        resetChordState()
+        cachedChordIntervalMs = nil
+        cachedChordIntervalKey = nil
         chromaHistory = []
+    }
+    
+    private func resetChordState() {
+        chordActive = false
+        chordEntryCounter = 0
+        chordExitCounter = 0
+        lastChordEmitTimeMs = 0
+        pendingChordCandidate = nil
     }
 
     func onOnset(timestampSec: Double) {
         let ts = Int(timestampSec * 1000)
         lastSignalTimeMs = ts
         isSilent = false
-        chordActive = false
-        // do not wipe chromaHistory; onset may happen frequently
+        
+        // On onset: reset chord state but keep history for quick re-detection
+        resetChordState()
+        lastChordProcessTimeMs = 0
+        cachedChordIntervalMs = nil
+        cachedChordIntervalKey = nil
     }
 
-    // MARK: - NOTE
+    // ============================================================
+    // MARK: - NOTE Detection (always active unless chord confirmed)
+    // ============================================================
+    
     func onNoteSamples(
         samples: [Float],
         timestampSec: Double,
@@ -101,11 +141,15 @@ final class NativeAudioPipeline {
     ) {
         guard isActive else { return }
 
+        // RMS gate
+        if rms < RMS_NOTE_THRESHOLD { return }
+
         let ts = Int(timestampSec * 1000)
         lastSignalTimeMs = ts
         isSilent = false
 
-        // JS parity: if chord active, ignore notes
+        // KEY CHANGE: Only block notes if chord is CONFIRMED active
+        // This is the hysteresis: chord must be stable before suppressing notes
         if chordActive { return }
 
         pitchService.setSampleRate(sampleRate)
@@ -123,11 +167,13 @@ final class NativeAudioPipeline {
             freq > 0
         else { return }
 
-        chordActive = false
         emitDetection?(det)
     }
 
-    // MARK: - CHORD
+    // ============================================================
+    // MARK: - CHORD Detection (parallel track with hysteresis)
+    // ============================================================
+    
     func onChordSamples(
         samples: [Float],
         timestampSec: Double,
@@ -136,107 +182,232 @@ final class NativeAudioPipeline {
     ) {
         guard isActive else { return }
 
+        // RMS gate (lower threshold for soft strums)
+        if rms < RMS_CHORD_THRESHOLD { return }
+
         let ts = Int(timestampSec * 1000)
         lastSignalTimeMs = ts
         isSilent = false
 
-        // Basic throttling like old JS “intervalMs”
-        if ts - lastChordProcessTimeMs < CHORD_PROCESS_INTERVAL_MS { return }
+        // Dynamic interval (faster for lower latency)
+        let intervalMs = getChordIntervalMs(windowSize: samples.count, sampleRate: sampleRate)
+        if ts - lastChordProcessTimeMs < intervalMs { return }
         lastChordProcessTimeMs = ts
 
         chordService.setSampleRate(sampleRate)
         chordService.processSamples(samples: samples, timestampMs: ts)
     }
 
-    // MARK: - CHORD SEMANTIC (Upgraded anti-mono gates)
+    // ============================================================
+    // MARK: - CHORD Semantic Decision (with hysteresis)
+    // ============================================================
+    
     private func handleChordResult(_ result: ChordDetectionResult) {
         guard isActive else { return }
 
-        // Always record chroma frames (even if candidate=nil)
         let chroma = result.chroma
-        if chroma.count == 12 {
-            pushChromaFrame(timestampMs: result.timestamp, chroma: chroma)
-        } else {
+        guard chroma.count == 12 else { return }
+        
+        pushChromaFrame(timestampMs: result.timestamp, chroma: chroma)
+        
+        // Evaluate chord candidate
+        guard let cand = result.candidate else {
+            handleNoChordCandidate(timestamp: result.timestamp)
             return
         }
-
-        // Must have candidate
-        guard let cand = result.candidate else { return }
-
-        // Confidence gate
+        
         let conf = cand.confidence
-        if conf < CHORD_CONFIDENCE_THRESHOLD { return }
-
-        // 1) Harmonic-collapse / monophonic dominance detection
-        // Use an averaged chroma over the recent window for stability.
-        let avg = averagedChromaInWindow(nowMs: result.timestamp)
-        if avg.count != 12 { return }
-
-        // If it looks monophonic, suppress harmonic-ish bins and re-check "chordiness"
-        let mono = isMonophonicDominant(chroma: avg)
-        let gatedChroma = mono ? suppressHarmonicIllusions(chroma: avg) : avg
-
-        // 2) Active pitch class count gate (on gated chroma)
-        let activeCount = countActivePitchClasses(chroma: gatedChroma, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
-        if activeCount < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD { return }
-
-        // 3) Temporal co-activation gate:
-        // In the last window, do we see ">=2 active PCs" in enough frames?
-        if !passesCoActivationGate(nowMs: result.timestamp) { return }
-
-        // 4) Interval skeleton gate:
-        // For major/minor: MUST have both 3rd and 5th present (not just root+5th).
-        if !passesIntervalSkeletonGate(chroma: gatedChroma, root: cand.root, quality: cand.quality) {
+        
+        // Basic confidence gate (lowered, rely on structural gates)
+        if conf < CHORD_CONFIDENCE_THRESHOLD {
+            handleNoChordCandidate(timestamp: result.timestamp)
             return
         }
-
-        // 5) Old “2-of-3 template bins” rule (keep it as additional safety)
+        
+        // Use current frame chroma for faster response (not averaged)
+        // Only use averaged for stability checks
+        let instantChroma = chroma
+        let avgChroma = averagedChromaInWindow(nowMs: result.timestamp)
+        
+        // --- STRUCTURAL SAFETY GATES ---
+        // These are the hard gates that prevent single notes from being classified as chords
+        
+        // 1) Monophonic dominance check (on averaged chroma for stability)
+        let mono = isMonophonicDominant(chroma: avgChroma)
+        if mono {
+            // If monophonic, apply harmonic suppression and re-check
+            let suppressed = suppressHarmonicIllusions(chroma: avgChroma)
+            let suppressedActive = countActivePitchClasses(chroma: suppressed, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
+            if suppressedActive < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD {
+                handleNoChordCandidate(timestamp: result.timestamp)
+                return
+            }
+        }
+        
+        // 2) Active pitch class count (on instant chroma for responsiveness)
+        let activeCount = countActivePitchClasses(chroma: instantChroma, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
+        if activeCount < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD {
+            handleNoChordCandidate(timestamp: result.timestamp)
+            return
+        }
+        
+        // 3) Interval skeleton gate: must have 3rd AND 5th
+        if !passesIntervalSkeletonGate(chroma: instantChroma, root: cand.root, quality: cand.quality) {
+            handleNoChordCandidate(timestamp: result.timestamp)
+            return
+        }
+        
+        // 4) Template match (at least 2 of 3 chord tones present)
         let requiredPCs = chordPitchClasses(root: cand.root, quality: cand.quality)
         var matchCount = 0
         for pc in requiredPCs {
-            if gatedChroma[pc] >= TEMPLATE_MATCH_THRESHOLD {
+            if instantChroma[pc] >= TEMPLATE_MATCH_THRESHOLD {
                 matchCount += 1
             }
         }
-        if matchCount < MIN_TEMPLATE_MATCH { return }
-
-        // If we got here, it's a real chord.
+        if matchCount < MIN_TEMPLATE_MATCH {
+            handleNoChordCandidate(timestamp: result.timestamp)
+            return
+        }
+        
+        // --- PASSED ALL GATES: This is a valid chord candidate ---
+        handleValidChordCandidate(
+            root: cand.root,
+            quality: cand.quality,
+            confidence: conf,
+            timestamp: result.timestamp
+        )
+    }
+    
+    private func handleValidChordCandidate(
+        root: Int,
+        quality: DetectedChordQuality,
+        confidence: Double,
+        timestamp: Int
+    ) {
+        // Reset exit counter since we have a valid candidate
+        chordExitCounter = 0
+        
+        // Strong confidence = immediate activation
+        if confidence >= CHORD_CONFIDENCE_STRONG {
+            activateChord(root: root, quality: quality, confidence: confidence, timestamp: timestamp)
+            return
+        }
+        
+        // Normal confidence = use hysteresis
+        if chordActive {
+            // Already active, just emit (chord continuation)
+            emitChord(root: root, quality: quality, confidence: confidence, timestamp: timestamp)
+        } else {
+            // Not active yet, increment entry counter
+            chordEntryCounter += 1
+            pendingChordCandidate = (root, quality, confidence)
+            
+            if chordEntryCounter >= CHORD_ENTRY_FRAMES {
+                activateChord(root: root, quality: quality, confidence: confidence, timestamp: timestamp)
+            }
+        }
+    }
+    
+    private func handleNoChordCandidate(timestamp: Int) {
+        // No valid chord in this frame
+        chordEntryCounter = 0
+        pendingChordCandidate = nil
+        
+        if chordActive {
+            // Check if we should exit chord mode
+            let timeSinceLastEmit = timestamp - lastChordEmitTimeMs
+            
+            if timeSinceLastEmit > CHORD_HOLD_MS {
+                chordExitCounter += 1
+                
+                if chordExitCounter >= CHORD_EXIT_FRAMES {
+                    // Exit chord mode
+                    chordActive = false
+                    chordExitCounter = 0
+                }
+            }
+        }
+    }
+    
+    private func activateChord(
+        root: Int,
+        quality: DetectedChordQuality,
+        confidence: Double,
+        timestamp: Int
+    ) {
         chordActive = true
-
+        chordEntryCounter = 0
+        chordExitCounter = 0
+        emitChord(root: root, quality: quality, confidence: confidence, timestamp: timestamp)
+    }
+    
+    private func emitChord(
+        root: Int,
+        quality: DetectedChordQuality,
+        confidence: Double,
+        timestamp: Int
+    ) {
+        lastChordEmitTimeMs = timestamp
+        
         emitDetection?([
-            "timestamp": result.timestamp,
-            "confidence": conf,
+            "timestamp": timestamp,
+            "confidence": confidence,
             "frequency": 0,
             "amplitude": 0,
             "chord": [
-                "root": pitchClassName(cand.root),
-                "type": cand.quality.rawValue
+                "root": pitchClassName(root),
+                "type": quality.rawValue
             ]
         ])
     }
 
+    // ============================================================
     // MARK: - Silence
+    // ============================================================
+    
     func tickSilenceCheck(nowSec: Double) {
         guard isActive, !isSilent else { return }
         let now = Int(nowSec * 1000)
         if now - lastSignalTimeMs > SILENCE_TIMEOUT_MS {
             isSilent = true
-            chordActive = false
+            resetChordState()
             chromaHistory = []
             emitDetection?(nil)
         }
     }
 
-    // MARK: - NEW: Chroma history helpers
+    // ============================================================
+    // MARK: - Dynamic Chord Interval
+    // ============================================================
+    
+    private func getChordIntervalMs(windowSize: Int, sampleRate: Double) -> Int {
+        let key = "\(windowSize)@\(Int(sampleRate))"
+        
+        if let cached = cachedChordIntervalMs, cachedChordIntervalKey == key {
+            return cached
+        }
+        
+        let windowDurationMs = Double(windowSize) / sampleRate * 1000.0
+        let raw = windowDurationMs * CHORD_RATE_FACTOR
+        let clamped = max(CHORD_RATE_MIN_MS, min(Int(raw), CHORD_RATE_MAX_MS))
+        
+        cachedChordIntervalKey = key
+        cachedChordIntervalMs = clamped
+        
+        return clamped
+    }
+
+    // ============================================================
+    // MARK: - Chroma History Helpers
+    // ============================================================
 
     private func pushChromaFrame(timestampMs: Int, chroma: [Double]) {
         chromaHistory.append(ChromaFrame(timestampMs: timestampMs, chroma: chroma))
-        // prune
         let minTs = timestampMs - CHROMA_HISTORY_WINDOW_MS
         chromaHistory.removeAll { $0.timestampMs < minTs }
-        // cap just in case
-        if chromaHistory.count > 12 {
-            chromaHistory.removeFirst(chromaHistory.count - 12)
+        if chromaHistory.count > 8 {
+            chromaHistory.removeFirst(chromaHistory.count - 8)
         }
     }
 
@@ -252,7 +423,6 @@ final class NativeAudioPipeline {
         let n = Double(frames.count)
         for i in 0..<12 { acc[i] /= n }
 
-        // normalize again (defensive)
         let sum = acc.reduce(0.0, +)
         if sum > 0 {
             for i in 0..<12 { acc[i] /= sum }
@@ -260,25 +430,12 @@ final class NativeAudioPipeline {
         return acc
     }
 
-    private func passesCoActivationGate(nowMs: Int) -> Bool {
-        let minTs = nowMs - CHROMA_HISTORY_WINDOW_MS
-        let frames = chromaHistory.filter { $0.timestampMs >= minTs }
-        guard !frames.isEmpty else { return false }
-
-        var good = 0
-        for f in frames {
-            // Count active PCs in this frame
-            let c = countActivePitchClasses(chroma: f.chroma, threshold: COACTIVATION_ACTIVE_THRESHOLD)
-            if c >= 2 { good += 1 }
-        }
-        return good >= COACTIVATION_MIN_FRAMES
-    }
-
-    // MARK: - NEW: Monophonic + harmonic suppression
+    // ============================================================
+    // MARK: - Monophonic Detection & Harmonic Suppression
+    // ============================================================
 
     private func isMonophonicDominant(chroma: [Double]) -> Bool {
         guard chroma.count == 12 else { return true }
-        // find top-2 energies
         var max1: Double = -1
         var max2: Double = -1
         for v in chroma {
@@ -289,15 +446,13 @@ final class NativeAudioPipeline {
                 max2 = v
             }
         }
+        // If top bin is very dominant AND second bin is weak = monophonic
         return (max1 >= MONO_DOMINANT_MIN) && (max2 <= MONO_SECOND_MAX)
     }
 
-    /// When monophonic dominance is detected, suppress bins that are likely just harmonics of the dominant PC.
-    /// We keep this conservative to avoid harming real chords.
     private func suppressHarmonicIllusions(chroma: [Double]) -> [Double] {
         guard chroma.count == 12 else { return chroma }
 
-        // dominant PC
         var domPc = 0
         var domVal = chroma[0]
         for i in 1..<12 {
@@ -308,22 +463,18 @@ final class NativeAudioPipeline {
         }
         if domVal <= 0 { return chroma }
 
-        // candidate harmonic intervals relative to dominant:
-        // perfect fifth (7) is the main offender; major third (4) sometimes shows up via overtones.
         let harmonicTargets = [
-            (domPc + 7) % 12,
-            (domPc + 4) % 12
+            (domPc + 7) % 12,  // Perfect 5th
+            (domPc + 4) % 12   // Major 3rd
         ]
 
         var out = chroma
         for pc in harmonicTargets {
-            // only suppress if it's significantly weaker than dominant
             if out[pc] > 0, out[pc] < domVal * HARMONIC_SUPPRESS_RATIO {
                 out[pc] = 0
             }
         }
 
-        // renormalize
         let sum = out.reduce(0.0, +)
         if sum > 0 {
             for i in 0..<12 { out[i] /= sum }
@@ -331,7 +482,9 @@ final class NativeAudioPipeline {
         return out
     }
 
-    // MARK: - NEW: Interval skeleton gate (3rd + 5th required)
+    // ============================================================
+    // MARK: - Interval Skeleton Gate
+    // ============================================================
 
     private func passesIntervalSkeletonGate(
         chroma: [Double],
@@ -348,24 +501,23 @@ final class NativeAudioPipeline {
         let thirdE = chroma[third]
         let fifthE = chroma[fifth]
 
-        // Must actually see the defining intervals.
-        // (Root can be dominant; that's fine.)
+        // Both 3rd and 5th must be present
         let thirdOK = thirdE >= TEMPLATE_MATCH_THRESHOLD
         let fifthOK = fifthE >= TEMPLATE_MATCH_THRESHOLD
 
-        // Hard requirement: both must be present
         if !(thirdOK && fifthOK) { return false }
 
-        // Extra anti-mono sanity: if root dwarfs everything, still suspicious.
-        // (This catches "single note with tiny overtone bins".)
-        if rootE >= 0.85 && (thirdE < 0.12 || fifthE < 0.12) {
+        // Extra safety: if root overwhelmingly dominates, suspicious
+        if rootE >= 0.80 && (thirdE < 0.10 || fifthE < 0.10) {
             return false
         }
 
         return true
     }
 
-    // MARK: - Helpers (existing)
+    // ============================================================
+    // MARK: - Helpers
+    // ============================================================
 
     private func countActivePitchClasses(chroma: [Double], threshold: Double) -> Int {
         var c = 0
