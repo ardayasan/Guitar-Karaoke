@@ -120,7 +120,7 @@ export default function SettingsScreen() {
             mode="outlined"
             onPress={() => setPitchConfig({
               sensitivity: DEFAULT_PITCH_CONFIG.yinThreshold,
-              smoothing: DEFAULT_PITCH_CONFIG.smoothingWindow,
+              smoothing: 0.3, // Default smoothing value
               minConfidence: DEFAULT_PITCH_CONFIG.minConfidence,
             })}
             style={styles.resetButton}

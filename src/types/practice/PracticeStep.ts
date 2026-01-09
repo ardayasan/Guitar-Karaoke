@@ -5,6 +5,16 @@ export type PracticeStep =
     | PracticeRestStep;
 
 type BaseStep = {
+    /** Runtime-calculated: step index in sequence */
+    index?: number;
+    /** Runtime-calculated: start time in ms from practice start */
+    startTimeMs?: number;
+    /** Runtime-calculated: end time in ms (exclusive) */
+    endTimeMs?: number;
+    /** Runtime-set: evaluation result */
+    result?: 'correct' | 'incorrect' | 'missed' | 'pending';
+    /** Runtime-set: whether stats have been updated for this step */
+    statsUpdated?: boolean;
 };
 
 export type PracticeNoteStep = BaseStep & {

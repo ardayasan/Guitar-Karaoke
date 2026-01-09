@@ -71,7 +71,35 @@ export default function HomeDescriptions() {
         <FlowLine />
         <FlowNode icon="guitar-acoustic" label="Play Guitar" />
         <FlowLine />
-        <FlowNode icon="check-circle-outline" label="Follow Feedback" />
+
+        {/* Additional Features Row */}
+        <View style={styles.featuresRow}>
+            <TouchableOpacity
+                style={styles.featureButton}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate("Tuner")}
+            >
+                <Icon
+                    source="music-clef-treble"
+                    size={28}
+                    color="rgba(255,255,255,0.95)"
+                />
+                <Text style={styles.featureText}>Guitar Tuner</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                style={styles.featureButton}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate("Songwriting")}
+            >
+                <Icon
+                    source="pencil-plus"
+                    size={28}
+                    color="rgba(255,255,255,0.95)"
+                />
+                <Text style={styles.featureText}>Create Song</Text>
+            </TouchableOpacity>
+        </View>
 
         </View>
     );
@@ -211,5 +239,42 @@ const styles = StyleSheet.create({
         width: 1.6,
         height: 26,
         backgroundColor: colors.flow.line,
+    },
+
+    /* FEATURES ROW */
+    featuresRow: {
+        flexDirection: 'row',
+        gap: 24,
+        marginTop: 8,
+    },
+
+    featureButton: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+
+        backgroundColor: '#250036',
+
+        borderWidth: 2,
+        borderColor: 'rgba(199,125,255,0.45)',
+
+        shadowColor: '#C77DFF',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.4,
+        shadowRadius: 14,
+
+        elevation: 8,
+
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+
+    featureText: {
+        marginTop: 6,
+        color: 'rgba(255,255,255,0.90)',
+        fontSize: 12,
+        fontWeight: '600',
+        letterSpacing: 0.4,
+        textAlign: 'center',
     },
 });

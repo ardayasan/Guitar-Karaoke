@@ -1,15 +1,13 @@
 /**
  * PracticeTabTimeline
  *
- * TRUE guitar practice timeline renderer (PracticeTab based):
+ * Guitar practice timeline with:
  * - 6 horizontal strings
- * - Frets rendered ON strings
- * - Global vertical HUD bar marks current ACTIVE STEP
+ * - Notes as numbered circles on strings
+ * - Chords as VERTICAL BARS spanning all 6 strings
+ * - Color-coded feedback for correct/incorrect/pending
  *
- * NOTE:
- * This component is PURE.
- * It does NOT manage state.
- * Active step is driven from PracticeStore.
+ * This component is PURE - state driven from PracticeStore.
  */
 
 import React, { useMemo } from "react";
@@ -18,15 +16,64 @@ import { Text } from "react-native-paper";
 
 import colors from "@/theme/colors";
 import { PracticeTab } from "@/types/practice/PracticeTab";
+import { PracticeStep } from "@/types/practice/PracticeStep";
 
 type Props = {
-    tab: PracticeTab;
-    currentIndex: number;
-    windowSize?: number;
+  tab: PracticeTab;
+  currentIndex: number;
+  windowSize?: number;
 };
 
 const STRINGS = [1, 2, 3, 4, 5, 6];
+const STRING_HEIGHT = 40;
+const TOTAL_STRING_HEIGHT = STRING_HEIGHT * 6;
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+/**
+ * Get colors based on step result
+ */
+function getStepColors(
+  step: PracticeStep,
+  isActive: boolean
+): { bg: string; border: string; text: string } {
+  const result = step.result;
+
+  if (isActive && result === 'pending') {
+    return {
+      bg: colors.brand.primary,
+      border: colors.utility.accent,
+      text: '#fff',
+    };
+  }
+
+  switch (result) {
+    case 'correct':
+      return {
+        bg: colors.feedback.correct,
+        border: colors.feedback.correct,
+        text: '#000',
+      };
+    case 'incorrect':
+      return {
+        bg: colors.feedback.incorrect,
+        border: colors.feedback.incorrect,
+        text: '#fff',
+      };
+    case 'missed':
+      return {
+        bg: colors.feedback.missed,
+        border: colors.feedback.missed,
+        text: '#fff',
+      };
+    case 'pending':
+    default:
+      return {
+        bg: 'rgba(122,60,255,0.3)',
+        border: 'rgba(199,125,255,0.4)',
+        text: '#fff',
+      };
+  }
+}
 
 const PracticeTabTimeline: React.FC<Props> = ({
   tab,
@@ -52,86 +99,118 @@ const PracticeTabTimeline: React.FC<Props> = ({
   );
 
   const COL_WIDTH = Math.floor(
-    (SCREEN_WIDTH - 16) / windowSize
+    (SCREEN_WIDTH - 32) / windowSize
   );
 
   return (
     <View style={styles.container}>
+      {/* ===== STRINGS BACKGROUND ===== */}
+      <View style={styles.stringsContainer}>
+        {STRINGS.map((string) => (
+          <View key={string} style={styles.stringRow}>
+            <View style={styles.stringLine} />
+          </View>
+        ))}
+      </View>
 
-      {/* ===== GLOBAL ACTIVE HUD BAR ===== */}
-      <View
-        style={[
-          styles.activeHud,
-          {
-            width: COL_WIDTH - 6,
-            left: 3,
-          },
-        ]}
-      />
+      {/* ===== STEPS OVERLAY ===== */}
+      <View style={styles.stepsOverlay}>
+        {visibleSteps.map((step, colIdx) => {
+          const isActive = colIdx === 0;
+          const colorStyle = getStepColors(step, isActive);
 
-      {STRINGS.map((string) => (
-        <View key={string} style={styles.stringRow}>
-
-          {/* STRING LINE */}
-          <View style={styles.stringLine} />
-
-          <View style={styles.noteRow}>
-            {visibleSteps.map((step, colIdx) => {
-              const isActive = colIdx === 0;
-
-              if (step.type !== "note") {
-                return (
-                  <View
-                    key={`${string}-${colIdx}`}
-                    style={[styles.colSlot, { width: COL_WIDTH }]}
-                  />
-                );
-              }
-
-              if (step.position.string !== string) {
-                return (
-                  <View
-                    key={`${string}-${colIdx}`}
-                    style={[styles.colSlot, { width: COL_WIDTH }]}
-                  />
-                );
-              }
-
-              return (
+          /* ----- CHORD: Vertical bar spanning all strings ----- */
+          if (step.type === 'chord') {
+            return (
+              <View
+                key={`step-${colIdx}`}
+                style={[styles.colSlot, { width: COL_WIDTH }]}
+              >
                 <View
-                  key={`${string}-${colIdx}`}
                   style={[
-                    styles.colSlot,
-                    { width: COL_WIDTH },
+                    styles.chordBar,
+                    {
+                      backgroundColor: colorStyle.bg,
+                      borderColor: colorStyle.border,
+                      borderWidth: isActive ? 3 : 2,
+                    },
                   ]}
                 >
-                  <View
+                  <Text
                     style={[
-                      styles.bubble,
-                      isActive && styles.bubbleActive,
+                      styles.chordLabel,
+                      { color: colorStyle.text },
+                      isActive && styles.chordLabelActive,
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.bubbleText,
-                        isActive && styles.bubbleTextActive,
-                      ]}
-                    >
-                      {step.position.fret}
-                    </Text>
-                  </View>
+                    {step.chordName}
+                  </Text>
                 </View>
-              );
-            })}
-          </View>
+                {/* Strum direction arrow */}
+                <Text style={styles.strumArrow}>↓</Text>
+              </View>
+            );
+          }
 
-        </View>
-      ))}
+          /* ----- NOTE: Circle on specific string ----- */
+          if (step.type === 'note') {
+            const stringIndex = step.position.string - 1; // 0-indexed
+            const topOffset = stringIndex * STRING_HEIGHT + (STRING_HEIGHT - 32) / 2;
+
+            return (
+              <View
+                key={`step-${colIdx}`}
+                style={[styles.colSlot, { width: COL_WIDTH }]}
+              >
+                <View
+                  style={[
+                    styles.noteBubble,
+                    {
+                      top: topOffset,
+                      backgroundColor: colorStyle.bg,
+                      borderColor: colorStyle.border,
+                      borderWidth: isActive ? 3 : 2,
+                    },
+                    isActive && styles.noteBubbleActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.noteText,
+                      { color: colorStyle.text },
+                      isActive && styles.noteTextActive,
+                    ]}
+                  >
+                    {step.position.fret}
+                  </Text>
+                </View>
+              </View>
+            );
+          }
+
+          /* ----- REST: Empty slot ----- */
+          return (
+            <View
+              key={`step-${colIdx}`}
+              style={[styles.colSlot, { width: COL_WIDTH }]}
+            />
+          );
+        })}
+      </View>
+
+      {/* ===== ACTIVE STEP HIGHLIGHT ===== */}
+      {visibleSteps.length > 0 && (
+        <View
+          style={[
+            styles.activeHighlight,
+            { width: COL_WIDTH - 4, left: 2 },
+          ]}
+        />
+      )}
 
       <Text style={styles.progress}>
         Step {currentIndex + 1} / {steps.length}
       </Text>
-
     </View>
   );
 };
@@ -148,23 +227,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
 
-  activeHud: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    borderRadius: 12,
-    backgroundColor: "rgba(199,125,255,0.13)",
-    borderWidth: 1,
-    borderColor: "rgba(199,125,255,0.35)",
-    shadowColor: "#C77DFF",
-    shadowOpacity: 0.65,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 0 },
-    zIndex: -1,
+  stringsContainer: {
+    height: TOTAL_STRING_HEIGHT,
   },
 
   stringRow: {
-    height: 44,
+    height: STRING_HEIGHT,
     justifyContent: "center",
   },
 
@@ -172,51 +240,104 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    height: 2.2,
-    borderRadius: 2,
-    backgroundColor: "rgba(199,125,255,0.45)",
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "rgba(199,125,255,0.4)",
   },
 
-  noteRow: {
-    flexDirection: "row",
+  stepsOverlay: {
+    position: 'absolute',
+    top: 10,
+    left: 0,
+    right: 0,
+    height: TOTAL_STRING_HEIGHT,
+    flexDirection: 'row',
   },
 
   colSlot: {
     alignItems: "center",
-    justifyContent: "center",
+    position: 'relative',
+    height: TOTAL_STRING_HEIGHT,
   },
 
-  bubble: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.brand.primary,
-    alignItems: "center",
-    justifyContent: "center",
+  /* ----- Chord Bar (spans all strings) ----- */
+  chordBar: {
+    position: 'absolute',
+    top: 4,
+    bottom: 24, // Leave room for label
+    width: '70%',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: "#C77DFF",
-    shadowOpacity: 0.85,
-    shadowRadius: 10,
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 0 },
   },
 
-  bubbleActive: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  chordLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: 'center',
   },
 
-  bubbleText: {
+  chordLabelActive: {
     fontSize: 16,
     fontWeight: "800",
-    color: "#fff",
   },
 
-  bubbleTextActive: {
+  strumArrow: {
+    position: 'absolute',
+    bottom: 0,
     fontSize: 18,
+    color: colors.text.subtle,
+  },
+
+  /* ----- Note Bubble ----- */
+  noteBubble: {
+    position: 'absolute',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#C77DFF",
+    shadowOpacity: 0.7,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
+
+  noteBubbleActive: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    shadowOpacity: 1,
+    shadowRadius: 12,
+  },
+
+  noteText: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  noteTextActive: {
+    fontSize: 16,
+  },
+
+  /* ----- Active Highlight ----- */
+  activeHighlight: {
+    position: "absolute",
+    top: 10,
+    height: TOTAL_STRING_HEIGHT,
+    borderRadius: 10,
+    backgroundColor: "rgba(199,125,255,0.08)",
+    borderWidth: 2,
+    borderColor: "rgba(199,125,255,0.3)",
+    zIndex: -1,
   },
 
   progress: {
-    marginTop: 10,
+    marginTop: 12,
     textAlign: "center",
     fontSize: 12,
     color: colors.text.subtle,

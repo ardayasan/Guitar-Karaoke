@@ -11,13 +11,18 @@ export type RootStackParamList = {
   Practice: {
     tab: PracticeTab;
   };
+  LandscapePractice: {
+    tab: PracticeTab;
+  };
   Settings: undefined;
   Information: undefined;
   DetectionTest: undefined;
+  Tuner: undefined;
+  Songwriting: undefined;
 };
 
 declare global {
   namespace ReactNavigation {
-    interface RootParamList extends RootStackParamList {}
+    interface RootParamList extends RootStackParamList { }
   }
 }
