@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
     },
 
     title: {
-        fontSize: 52,
+        fontSize: 48,
         fontFamily: typography.heroTitle,
         color: colors.text.primary,
         letterSpacing: 1,
