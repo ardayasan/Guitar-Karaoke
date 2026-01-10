@@ -8,9 +8,7 @@ const HomeSignature = () => {
     return (
         <View style={styles.container}>
             <View style={styles.divider} />
-            <Text style={styles.signature}>
-                Made with 💜 by Arda & Burak
-            </Text>
+
         </View>
     );
 };

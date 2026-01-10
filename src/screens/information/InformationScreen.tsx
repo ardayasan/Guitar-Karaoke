@@ -72,9 +72,7 @@ export default function InformationScreen() {
                     <Feature text="Local processing" />
                 </View>
 
-                {/* CREDITS */}
                 <View style={styles.creditCard}>
-                    <Text style={styles.creditTitle}>Built with 💜 by</Text>
                     <View style={styles.creditNames}>
                         <Text style={styles.creditName}>Arda Yasan</Text>
                         <Text style={styles.creditDivider}>•</Text>
@@ -84,6 +82,7 @@ export default function InformationScreen() {
                         An experimental music-tech project focused on real-time audio analysis.
                     </Text>
                 </View>
+
             </View>
 
         </ScrollView>
