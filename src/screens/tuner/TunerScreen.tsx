@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Dimensions, TouchableOpacity, Animated, Easing } from 'react-native';
 import { Text, Icon } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,8 +7,6 @@ import colors from '@/theme/colors';
 import { AudioPipeline } from '@/services/audio/AudioPipeline';
 
 const { width } = Dimensions.get('window');
-const BAR_WIDTH = width - 40;
-const BAR_CENTER = BAR_WIDTH / 2;
 
 /**
  * Guitar strings (6 → 1)
@@ -22,133 +20,130 @@ const STRINGS = [
   { string: 1, name: 'E', octave: 4, freq: 329.63 },
 ];
 
+// Meter dimensions
+const METER_SIZE = width - 80;
+const METER_RADIUS = METER_SIZE / 2;
+const NEEDLE_LENGTH = METER_RADIUS - 20;
+
 export default function TunerScreen() {
   const pipelineRef = useRef<AudioPipeline | null>(null);
 
-  const lastFreqRef = useRef<number | null>(null);
-
-  // Silence reset refs
-  const lastDetectionTimeRef = useRef<number>(0);
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Animated needle rotation
+  const needleRotation = useRef(new Animated.Value(0)).current;
 
   const [isListening, setIsListening] = useState(false);
   const [note, setNote] = useState<{ name: string; octave: number } | null>(null);
   const [cents, setCents] = useState(0);
-  const [target, setTarget] = useState<(typeof STRINGS)[0] | null>(null);
-  const [selectedString, setSelectedString] = useState<(typeof STRINGS)[0] | null>(null);
+  const [status, setStatus] = useState<string>('SILENT');
+  const [selectedString, setSelectedString] = useState<number | null>(null);
+  const [isSilent, setIsSilent] = useState(true);
 
   useEffect(() => {
     pipelineRef.current = new AudioPipeline();
     return () => {
-      // cleanup timers + pipeline
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
-      }
       pipelineRef.current?.stop();
       pipelineRef.current = null;
     };
   }, []);
 
-  const resetToIdle = useCallback(() => {
-    setCents(0);
-    setTarget(null);
-    setNote(null);
-    lastFreqRef.current = null;
-  }, []);
+  // Send string selection to native when it changes
+  useEffect(() => {
+    if (pipelineRef.current && isListening) {
+      pipelineRef.current.setTunerString(selectedString);
+    }
+  }, [selectedString, isListening]);
 
-  const handleDetection = useCallback(
-    (d: any) => {
-      // If pipeline emits null/partial data, don't thrash UI; silence timer will handle reset.
-      if (!d?.frequency) return;
+  const animateNeedle = useCallback((targetCents: number) => {
+    // Map cents (-50 to +50) to rotation (-1 to +1)
+    const rotation = Math.max(-1, Math.min(1, targetCents / 50));
 
-      // mark last detection time
-      lastDetectionTimeRef.current = Date.now();
+    Animated.timing(needleRotation, {
+      toValue: rotation,
+      duration: 200,  // Slower for smoother movement
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [needleRotation]);
 
-      // clear any pending silence reset
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
-      }
+  const handleDetection = useCallback((d: any) => {
+    // Handle silence / null
+    if (!d || d.isSilent) {
+      setIsSilent(true);
+      setNote(null);
+      setCents(0);
+      setStatus('SILENT');
+      animateNeedle(0);
+      return;
+    }
 
-      const raw = d.frequency;
+    // Only process tuner data
+    if (!d.isTuner) return;
 
-      // smoothing
-      const ALPHA = 0.15;
-      const smooth =
-        lastFreqRef.current == null ? raw : lastFreqRef.current * (1 - ALPHA) + raw * ALPHA;
-      lastFreqRef.current = smooth;
+    setIsSilent(false);
 
-      // target selection
-      const targetString = selectedString
-        ? selectedString
-        : STRINGS.reduce((p, c) =>
-            Math.abs(c.freq - smooth) < Math.abs(p.freq - smooth) ? c : p
-          );
+    const c = d.cents ?? 0;
+    setCents(Math.round(c));
+    setStatus(d.status ?? 'PERFECT');
 
-      setTarget(targetString);
-      setNote({ name: targetString.name, octave: targetString.octave });
+    if (d.targetName && d.targetOctave !== undefined) {
+      setNote({ name: d.targetName, octave: d.targetOctave });
+    }
 
-      // cents relative to target ONLY
-      let c = 1200 * Math.log2(smooth / targetString.freq);
-      if (Math.abs(c) <= 3) c = 0;
-
-      setCents(Math.max(-50, Math.min(50, Math.round(c))));
-
-      // schedule silence reset (GuitarTuna-like)
-      silenceTimerRef.current = setTimeout(() => {
-        const elapsed = Date.now() - lastDetectionTimeRef.current;
-        if (elapsed >= 400) {
-          resetToIdle();
-        }
-      }, 400);
-    },
-    [selectedString, resetToIdle]
-  );
+    animateNeedle(c);
+  }, [animateNeedle]);
 
   const start = () => {
     if (!pipelineRef.current || pipelineRef.current.isRunning()) return;
+
+    // Set string selection before starting
+    pipelineRef.current.setTunerString(selectedString);
     pipelineRef.current.start(handleDetection, 'tuner');
     setIsListening(true);
-
-    // start in idle center state
-    lastDetectionTimeRef.current = Date.now();
   };
 
   const stop = () => {
     pipelineRef.current?.stop();
     setIsListening(false);
-
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    lastDetectionTimeRef.current = 0;
-
-    resetToIdle();
+    setIsSilent(true);
+    setNote(null);
+    setCents(0);
+    setStatus('SILENT');
+    animateNeedle(0);
   };
 
-  // Marker position: always centered when idle/perfect
-  const markerX =
-    cents === 0 ? BAR_CENTER : Math.max(0, Math.min(BAR_WIDTH, ((cents + 50) / 100) * BAR_WIDTH));
+  const toggleString = (stringNo: number) => {
+    setSelectedString(prev => prev === stringNo ? null : stringNo);
+  };
 
-  const abs = Math.abs(cents);
-  const isPerfect = abs <= 3;
+  // Calculate status color
+  const getStatusColor = () => {
+    if (isSilent || !note) return colors.text.subtle;
+    if (status === 'PERFECT') return colors.feedback.correct;
+    const absCents = Math.abs(cents);
+    if (absCents <= 10) return '#4ADE80'; // Bright green
+    if (absCents <= 25) return '#FACC15'; // Yellow
+    return '#F87171'; // Red
+  };
 
-  let statusText = 'IN TUNE';
-  let statusColor = colors.feedback.correct;
+  // Needle rotation interpolation
+  const needleStyle = {
+    transform: [
+      {
+        rotate: needleRotation.interpolate({
+          inputRange: [-1, 1],
+          outputRange: ['-60deg', '60deg'],
+        }),
+      },
+    ],
+  };
 
-  if (!note) {
-    statusText = isListening ? 'PLAY A STRING' : 'TAP TO START';
-    statusColor = colors.text.subtle;
-  } else if (!isPerfect) {
-    statusText = cents < 0 ? 'LOW' : 'HIGH';
-    statusColor = abs < 15 ? '#FFCC00' : colors.feedback.incorrect;
-  }
-
-  // Discrete steps for marker label (NOT cents)
-  const step = abs <= 3 ? 0 : abs <= 10 ? 1 : abs <= 25 ? 2 : 3;
-  const stepText = step === 0 ? '' : cents < 0 ? `-${step}` : `+${step}`;
+  // Status text
+  const getStatusText = () => {
+    if (!isListening) return 'TAP TO START';
+    if (isSilent || !note) return 'PLAY A STRING';
+    if (status === 'PERFECT') return 'IN TUNE';
+    return status;
+  };
 
   return (
     <LinearGradient
@@ -157,60 +152,57 @@ export default function TunerScreen() {
     >
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.content}>
-          {/* NOTE */}
+
+          {/* NOTE DISPLAY */}
           <View style={styles.noteBox}>
             <Text style={styles.noteText}>{note ? note.name : '--'}</Text>
             <Text style={styles.octaveText}>{note ? note.octave : ''}</Text>
           </View>
 
-          {/* BAR */}
-          <View style={styles.tunerBar}>
-            <View style={styles.centerLine} />
+          {/* SEMICIRCULAR METER */}
+          <View style={styles.meterContainer}>
+            {/* Background arc */}
+            <View style={styles.meterArc}>
+              {/* Tick marks */}
+              {[-40, -30, -20, -10, 0, 10, 20, 30, 40].map((tick) => {
+                const angle = (tick / 50) * 60; // Map to ±60 degrees
+                const isCenter = tick === 0;
+                return (
+                  <View
+                    key={tick}
+                    style={[
+                      styles.tickMark,
+                      isCenter && styles.tickMarkCenter,
+                      {
+                        transform: [
+                          { rotate: `${angle}deg` },
+                          { translateY: -METER_RADIUS + 15 },
+                        ],
+                      },
+                    ]}
+                  />
+                );
+              })}
 
-            <View
-              style={[
-                styles.marker,
-                {
-                  left: markerX,
-                  backgroundColor: isPerfect ? colors.feedback.correct : '#fff',
-                  borderColor: isPerfect ? '#fff' : 'rgba(255,255,255,0.8)',
-                },
-              ]}
-            >
-              {stepText !== '' && <Text style={styles.markerValue}>{stepText}</Text>}
+              {/* Needle */}
+              <Animated.View style={[styles.needle, needleStyle]}>
+                <View style={[styles.needleLine, { backgroundColor: getStatusColor() }]} />
+              </Animated.View>
+
+              {/* Center dot */}
+              <View style={styles.centerDot} />
             </View>
+
+            {/* Cents display */}
+            <Text style={styles.centsText}>
+              {!isSilent && note ? `${cents > 0 ? '+' : ''}${cents}` : ''}
+            </Text>
           </View>
 
           {/* STATUS */}
-          <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
-
-          {/* STRING SELECTOR (bigger + not stuck at bottom) */}
-          <View style={styles.stringSelector}>
-            <TouchableOpacity
-              style={[styles.autoButton, selectedString === null && styles.autoActive]}
-              onPress={() => setSelectedString(null)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.autoText}>AUTO</Text>
-            </TouchableOpacity>
-
-            {STRINGS.map((s) => {
-              const active = selectedString === s;
-              return (
-                <TouchableOpacity
-                  key={s.string}
-                  style={styles.stringItem}
-                  onPress={() => setSelectedString(active ? null : s)}
-                  activeOpacity={0.85}
-                >
-                  <View style={[styles.stringLine, active && styles.stringLineActive]} />
-                  <Text style={[styles.stringNumber, active && styles.stringNumberActive]}>
-                    {s.string}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <Text style={[styles.statusText, { color: getStatusColor() }]}>
+            {getStatusText()}
+          </Text>
 
           {/* CONTROL */}
           <View style={styles.controls}>
@@ -228,6 +220,34 @@ export default function TunerScreen() {
               <Icon source={isListening ? 'stop' : 'microphone'} size={40} color="#fff" />
             </TouchableOpacity>
           </View>
+
+          {/* STRING SELECTOR */}
+          <View style={styles.stringSelector}>
+            <TouchableOpacity
+              style={[styles.autoButton, selectedString === null && styles.autoActive]}
+              onPress={() => setSelectedString(null)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.autoText}>AUTO</Text>
+            </TouchableOpacity>
+
+            {STRINGS.map((s) => {
+              const active = selectedString === s.string;
+              return (
+                <TouchableOpacity
+                  key={s.string}
+                  style={styles.stringItem}
+                  onPress={() => toggleString(s.string)}
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.stringLine, active && styles.stringLineActive]} />
+                  <Text style={[styles.stringNumber, active && styles.stringNumberActive]}>
+                    {s.string}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
       </SafeAreaView>
     </LinearGradient>
@@ -239,91 +259,108 @@ export default function TunerScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  content: { flex: 1, padding: 20 },
+  content: { flex: 1, padding: 20, alignItems: 'center' },
 
-  noteBox: { alignItems: 'center', marginTop: 40 },
+  noteBox: { alignItems: 'center', marginTop: 20 },
   noteText: {
-    fontSize: 120,
+    fontSize: 100,
     fontWeight: '800',
     color: '#fff',
     textShadowColor: colors.brand.primary,
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 20,
-    elevation: 10,
   },
   octaveText: {
-    fontSize: 32,
+    fontSize: 28,
     color: colors.text.secondary,
-    marginTop: -16,
+    marginTop: -12,
     fontWeight: '600',
     opacity: 0.85,
   },
 
-  tunerBar: {
-    width: BAR_WIDTH,
-    height: 8,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    borderRadius: 4,
-    alignSelf: 'center',
-    marginVertical: 28,
-    position: 'relative',
-  },
-  centerLine: {
-    position: 'absolute',
-    left: BAR_CENTER - 1,
-    width: 2,
-    height: 16,
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    top: -4,
-    borderRadius: 1,
-  },
-  marker: {
-    position: 'absolute',
-    top: -16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginLeft: -16,
-    borderWidth: 2,
+  // Meter
+  meterContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#fff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.55,
-    shadowRadius: 10,
-    elevation: 12,
+    marginVertical: 20,
   },
-  markerValue: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: colors.bg.main,
-    letterSpacing: 0.3,
+  meterArc: {
+    width: METER_SIZE,
+    height: METER_SIZE / 2 + 20,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  tickMark: {
+    position: 'absolute',
+    width: 2,
+    height: 12,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+    bottom: 0,
+  },
+  tickMarkCenter: {
+    width: 3,
+    height: 20,
+    backgroundColor: colors.feedback.correct,
+  },
+  needle: {
+    position: 'absolute',
+    bottom: 0,
+    width: 4,
+    height: NEEDLE_LENGTH,
+    alignItems: 'center',
+  },
+  needleLine: {
+    width: 4,
+    height: NEEDLE_LENGTH,
+    borderRadius: 2,
+  },
+  centerDot: {
+    position: 'absolute',
+    bottom: -8,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: colors.brand.primary,
+  },
+  centsText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 8,
+    height: 24,
   },
 
   statusText: {
     textAlign: 'center',
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
-    marginBottom: 10,
-    letterSpacing: 1,
+    marginVertical: 0,
+    letterSpacing: 1.5,
   },
 
-  // Selector placed above button and made bigger
+  // String selector
   stringSelector: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'flex-end',
-    gap: 18,
-    marginTop: 6,
-    marginBottom: 18,
+    alignItems: 'center',
+    gap: 14,
+    marginTop: 10,
+    marginBottom: 20,
+    height: 90
   },
   autoButton: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.16)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.18)',
+    height: 70,
+
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   autoActive: {
     backgroundColor: colors.brand.primary,
@@ -332,30 +369,29 @@ const styles = StyleSheet.create({
   autoText: {
     color: '#fff',
     fontWeight: '900',
-    fontSize: 14,
+    fontSize: 13,
     letterSpacing: 1,
   },
   stringItem: {
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     paddingHorizontal: 4,
   },
   stringLine: {
-    width: 7,
-    height: 52,
+    width: 10,
+    height: 70,
     backgroundColor: 'rgba(255,255,255,0.35)',
-    borderRadius: 4,
+    borderRadius: 3,
   },
   stringLineActive: {
-    height: 66,
+    height: 80,
     backgroundColor: colors.brand.primary,
     shadowColor: colors.brand.primary,
     shadowOpacity: 0.9,
     shadowRadius: 10,
-    elevation: 10,
   },
   stringNumber: {
-    fontSize: 15,
+    fontSize: 13,
     color: 'rgba(255,255,255,0.55)',
     fontWeight: '700',
   },
@@ -364,16 +400,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 
-  controls: { alignItems: 'center', marginTop: 6 },
+  controls: { alignItems: 'center', marginTop: 10 },
   circleButton: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 10,
+    marginBottom: 10
   },
 });

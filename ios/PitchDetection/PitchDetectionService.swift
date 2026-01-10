@@ -107,10 +107,10 @@ final class PitchDetectionService {
 
         // --------------------------------------------------
         // STEP 3 — Confidence gating
-        // Low notes (E2–D3) allowed weaker confidence
+        // Low notes (E2–G3, below 200Hz) allowed weaker confidence
         // --------------------------------------------------
-        let isLow = result.frequency < 110.0
-        let minConf = isLow ? 0.5 : config.minConfidence
+        let isLowFreq = result.frequency < 200.0  // Covers E2, A2, D3, G3
+        let minConf = isLowFreq ? 0.40 : config.minConfidence
 
         guard result.confidence >= minConf else {
             return nil

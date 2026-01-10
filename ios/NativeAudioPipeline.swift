@@ -15,6 +15,7 @@ final class NativeAudioPipeline {
     // MARK: - Services
     private let pitchService = PitchDetectionService()
     private let chordService = ChordDetectionService()
+    private let tunerEngine = TunerEngine()
 
     // MARK: - State
     private var isActive = false
@@ -151,12 +152,19 @@ final class NativeAudioPipeline {
         chordService.start { [weak self] res in
             self?.handleChordResult(res)
         }
+        
+        // Setup TunerEngine callback
+        tunerEngine.onTunerData = { [weak self] data in
+            self?.emitDetection?(data)
+        }
+        tunerEngine.start()
     }
 
     func stop() {
         isActive = false
         pitchService.stop()
         chordService.stop()
+        tunerEngine.stop()
 
         resetPitchState()
 
@@ -172,6 +180,10 @@ final class NativeAudioPipeline {
         } else {
             mode = .standard
         }
+    }
+    
+    func setTunerString(_ stringNo: Int?) {
+        tunerEngine.setSelectedString(stringNo)
     }
 
     private func resetPitchState() {
@@ -236,8 +248,57 @@ final class NativeAudioPipeline {
         lastSignalTimeMs = ts
         isSilent = false
 
+        // ========================================
+        // TUNER MODE: Route to TunerEngine
+        // ========================================
+        if mode == .tuner {
+            pitchService.setSampleRate(sampleRate)
+            
+            guard let det = pitchService.processSamples(
+                samples: samples,
+                timestampMs: ts,
+                amplitude: Double(rms)
+            ) else { return }
+            
+            guard
+                let conf = det["confidence"] as? Double,
+                var freq = det["frequency"] as? Double,
+                freq > 0
+            else { return }
+            
+            // ----------------------------------------
+            // Apply octave resolution using ZC
+            // SKIP for bass frequencies - ZC is unreliable for low notes
+            // and causes oscillation between octaves
+            // ----------------------------------------
+            let isBassNote = freq < 150.0  // E2=82, A2=110, D3=147
+            
+            if !isBassNote, let zcFreq = ZeroCrossing.estimateFrequency(samples: samples, sampleRate: sampleRate), zcFreq > 0 {
+                // Check if YIN is an octave off from ZC
+                let ratio = freq / zcFreq
+                
+                // If YIN is ~2x ZC, YIN might be an octave too high
+                if ratio > 1.8 && ratio < 2.2 {
+                    if zcFreq >= 70 && zcFreq <= 400 {
+                        freq = zcFreq
+                    }
+                }
+                // If YIN is ~0.5x ZC, YIN might be an octave too low
+                else if ratio > 0.45 && ratio < 0.55 {
+                    let higherFreq = freq * 2
+                    if higherFreq <= 400 {
+                        freq = higherFreq
+                    }
+                }
+            }
+            
+            // Send to TunerEngine for smoothing and display
+            tunerEngine.process(frequency: freq, confidence: conf, timestampMs: ts)
+            return
+        }
+
         // In standard mode, block notes only if chord is CONFIRMED active.
-        if mode != .tuner && chordActive { return }
+        if chordActive { return }
 
         // Safety: if for any reason we got here while idle (missed onset),
         // initialize onset now but do NOT emit immediately.
@@ -575,6 +636,12 @@ final class NativeAudioPipeline {
     func tickSilenceCheck(nowSec: Double) {
         guard isActive, !isSilent else { return }
         let now = Int(nowSec * 1000)
+        
+        // In tuner mode, use TunerEngine's silence check
+        if mode == .tuner {
+            tunerEngine.checkSilence(nowMs: now)
+        }
+        
         if now - lastSignalTimeMs > SILENCE_TIMEOUT_MS {
             isSilent = true
             resetPitchState()

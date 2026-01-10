@@ -43,4 +43,8 @@ export class AudioPipeline {
   isRunning() {
     return this.running;
   }
+
+  setTunerString(stringNo: number | null) {
+    AudioInputModule.setTunerString(stringNo);
+  }
 }

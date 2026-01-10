@@ -15,7 +15,8 @@
 		A64D941C2EF7700100FBEF27 /* AudioRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64D941B2EF7700100FBEF27 /* AudioRingBuffer.swift */; };
 		A651B3A12F0C435600EB9D3D /* NativeAudioPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A651B3A02F0C435600EB9D3D /* NativeAudioPipeline.swift */; };
 		A66DE9002EDD05E8008B2DB2 /* AudioInputModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66DE8FF2EDD05E4008B2DB2 /* AudioInputModule.swift */; };
-		A66DE9042EDD073E008B2DB2 /* AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A66DE9032EDD073E008B2DB2 /* AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m */; };
+		A66DE9042EDD073E008B2DB2 /* AudioInputModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A66DE9032EDD073E008B2DB2 /* AudioInputModule.m */; };
+		A67TUNER12F0C500000TUNER /* TunerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A67TUNER11F0C500000TUNER /* TunerEngine.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
@@ -30,7 +31,9 @@
 		A64D941B2EF7700100FBEF27 /* AudioRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRingBuffer.swift; sourceTree = "<group>"; };
 		A651B3A02F0C435600EB9D3D /* NativeAudioPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAudioPipeline.swift; sourceTree = "<group>"; };
 		A66DE8FF2EDD05E4008B2DB2 /* AudioInputModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioInputModule.swift; sourceTree = "<group>"; };
-		A66DE9032EDD073E008B2DB2 /* AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m"; sourceTree = "<group>"; };
+		A67TUNER11F0C500000TUNER /* TunerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunerEngine.swift; sourceTree = "<group>"; };
+		A66DE8FF2EDD05E4008B2DB2 /* AudioInputModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioInputModule.swift; sourceTree = "<group>"; };
+		A66DE9032EDD073E008B2DB2 /* AudioInputModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "AudioInputModule.m"; sourceTree = "<group>"; };
 		A9F35A4E66535C6788C1DEE9 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-SmartTabGuitarKaraoke/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = SmartTabGuitarKaraoke/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
@@ -71,8 +74,9 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
 				43D281D244440892471D5262 /* PrivacyInfo.xcprivacy */,
-				A66DE9032EDD073E008B2DB2 /* AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m */,
+				A66DE9032EDD073E008B2DB2 /* AudioInputModule.m */,
 				A64D941B2EF7700100FBEF27 /* AudioRingBuffer.swift */,
+				A67TUNER11F0C500000TUNER /* TunerEngine.swift */,
 			);
 			name = SmartTabGuitarKaraoke;
 			sourceTree = "<group>";
@@ -348,8 +352,9 @@
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
 				A651B3A12F0C435600EB9D3D /* NativeAudioPipeline.swift in Sources */,
 				A64D941C2EF7700100FBEF27 /* AudioRingBuffer.swift in Sources */,
+				A67TUNER12F0C500000TUNER /* TunerEngine.swift in Sources */,
 				0C3C83CFFD320FFB07668809 /* ExpoModulesProvider.swift in Sources */,
-				A66DE9042EDD073E008B2DB2 /* AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m AudioInputModule.m in Sources */,
+				A66DE9042EDD073E008B2DB2 /* AudioInputModule.m in Sources */,
 				A66DE9002EDD05E8008B2DB2 /* AudioInputModule.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

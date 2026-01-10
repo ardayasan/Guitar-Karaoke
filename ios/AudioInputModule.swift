@@ -42,6 +42,15 @@ final class AudioInputModule: RCTEventEmitter {
     }
   }
 
+  @objc(setTunerString:)
+  func setTunerString(_ stringNo: NSNumber?) {
+    if let num = stringNo {
+      pipeline.setTunerString(num.intValue)
+    } else {
+      pipeline.setTunerString(nil)
+    }
+  }
+
   @objc(start:)
   func start(_ options: NSDictionary) {
     if isRunning { return }

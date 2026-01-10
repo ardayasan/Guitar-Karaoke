@@ -72,8 +72,8 @@ public enum PitchDefaults {
     public static let DEFAULT_CONFIG = PitchDetectionConfig(
         sampleRate: 44100,
         bufferSize: 2048,
-        yinThreshold: 0.15,
-        minConfidence: 0.6,
+        yinThreshold: 0.25,         // Increased from 0.15 for better bass detection
+        minConfidence: 0.50,        // Lowered for bass strings
         minFrequency: GUITAR_RANGE.min - 10.0,
         maxFrequency: GUITAR_RANGE.max + 100.0
     )
