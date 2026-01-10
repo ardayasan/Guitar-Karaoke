@@ -102,6 +102,25 @@ export default function HomeDescriptions() {
                 </TouchableOpacity>
             </View>
 
+            {/* Dev/Debug Row */}
+            <TouchableOpacity
+                style={styles.debugCard}
+                activeOpacity={0.9}
+                onPress={() => navigation.navigate("DetectionTest")}
+            >
+                <Icon
+                    source="bug-outline"
+                    size={20}
+                    color="#FF6B6B"
+                />
+                <Text style={styles.debugText}>Detection Test</Text>
+                <Icon
+                    source="chevron-right"
+                    size={20}
+                    color="rgba(255,255,255,0.4)"
+                />
+            </TouchableOpacity>
+
             {/* Quick Stats / Tip Card */}
             <View style={styles.tipCard}>
                 <Icon
@@ -221,5 +240,26 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: "rgba(255,255,255,0.8)",
         lineHeight: 18,
+    },
+
+    /* Debug Card */
+    debugCard: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "rgba(255,107,107,0.08)",
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: "rgba(255,107,107,0.2)",
+    },
+
+    debugText: {
+        flex: 1,
+        marginLeft: 12,
+        fontSize: 14,
+        fontWeight: "600",
+        color: "rgba(255,255,255,0.8)",
     },
 });

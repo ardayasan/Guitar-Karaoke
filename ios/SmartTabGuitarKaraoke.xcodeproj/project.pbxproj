@@ -41,28 +41,8 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A651B3A22F0C436100EB9D3D /* PitchDetection */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = PitchDetection;
-			sourceTree = "<group>";
-		};
-		A651B3AF2F0C471500EB9D3D /* ChordDetection */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = ChordDetection;
-			sourceTree = "<group>";
-		};
+		A651B3A22F0C436100EB9D3D /* PitchDetection */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = PitchDetection; sourceTree = "<group>"; };
+		A651B3AF2F0C471500EB9D3D /* ChordDetection */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ChordDetection; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -404,7 +384,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.guitarkaraoke.smarttab;
+				PRODUCT_BUNDLE_IDENTIFIER = com.burak.guitarkaraoke.smarttab;
 				PRODUCT_NAME = SmartTabGuitarKaraoke;
 				SWIFT_OBJC_BRIDGING_HEADER = "SmartTabGuitarKaraoke/SmartTabGuitarKaraoke-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -436,7 +416,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.guitarkaraoke.smarttab;
+				PRODUCT_BUNDLE_IDENTIFIER = com.burak.guitarkaraoke.smarttab;
 				PRODUCT_NAME = SmartTabGuitarKaraoke;
 				SWIFT_OBJC_BRIDGING_HEADER = "SmartTabGuitarKaraoke/SmartTabGuitarKaraoke-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

@@ -21,63 +21,102 @@ final class NativeAudioPipeline {
     private var isSilent = true
     private var lastSignalTimeMs = 0
 
+    // MARK: - Pitch State Machine
+
+    private enum PitchState {
+        case idle
+        case onset
+        case steady
+    }
+
+    private var pitchState: PitchState = .idle
+
+    // Timing
+    private let ONSET_MIN_DURATION_MS = 40      // transient'i atla (pratikte daha güvenli)
+    private let STEADY_CONFIRM_FRAMES = 2       // üst üste kaç iyi frame ile steady'e geçilir
+
+    private var onsetStartMs: Int = 0
+    private var steadyCandidateCount = 0
+
+    // Pitch memory
+    private var lastStableFrequency: Double? = nil
+    private var lastPitchTimestampMs: Int = 0
+
+    // NEW: short-term ZC memory (internal-only signal)
+    private var lastZeroCrossFrequency: Double? = nil
+    private var lastZeroCrossTimestampMs: Int = 0
+
+    // Stability gates
+    private let ONSET_STABILITY_PCT = 0.04      // %4: onset'te adayların tutarlılığı
+    private let STEADY_MAX_JUMP_PCT = 0.08      // %8: steady'de fiziksel olmayan zıplamaları bastır
+    private let STEADY_MAX_JUMP_HZ_FLOOR = 6.0  // çok düşük frekansta yüzde yetmez, min mutlak tolerans
+
+    // Octave resolution helpers
+    private let OCTAVE_RESOLVE_MAX_CENTS = 45.0 // ZC ile octave seçimi için tolerans (cents)
+    private let OCTAVE_LOCK_MAX_CENTS = 30.0    // Steady'de octave-lock/flip bastırma
+
+    // NEW: Step-2 "fast confirm" gates (keeps single final output)
+    private let ZC_VALIDITY_WINDOW_MS = 90      // ZC'nin "yakın geçmiş" sayılacağı aralık
+    private let ZC_SUPPORT_MAX_CENTS = 35.0     // ZC, resolved freq'i destekliyor sayılacak tolerans
+    private let FAST_CONFIRM_REQUIRES_HISTORY = true // prevStable yoksa asla hızlandırma yapma
+
     // ============================================================
     // MARK: - TUNABLE PARAMETERS (grouped for easy adjustment)
     // ============================================================
-    
+
     // --- Timing ---
     private let SILENCE_TIMEOUT_MS = 400
     private let CHORD_RATE_FACTOR = 1.1
-    private let CHORD_RATE_MIN_MS = 80   // Faster chord processing for lower latency
+    private let CHORD_RATE_MIN_MS = 80
     private let CHORD_RATE_MAX_MS = 200
-    
+
     // --- RMS Gates ---
     private let RMS_NOTE_THRESHOLD: Float = 0.0008
-    private let RMS_CHORD_THRESHOLD: Float = 0.008  // Slightly lower for soft strums
-    
+    private let RMS_CHORD_THRESHOLD: Float = 0.008
+
     // --- Note Detection ---
     private let NOTE_CONFIDENCE_THRESHOLD = 0.8
-    
+
     // --- Chord Detection (relaxed for sensitivity) ---
-    private let CHORD_CONFIDENCE_THRESHOLD = 0.60      // Lowered: rely on structural gates for safety
-    private let CHORD_CONFIDENCE_STRONG = 0.75         // High confidence = immediate activation
-    
+    private let CHORD_CONFIDENCE_THRESHOLD = 0.60
+    private let CHORD_CONFIDENCE_STRONG = 0.75
+
     // --- Pitch Class Thresholds ---
-    private let PITCH_CLASS_ENERGY_THRESHOLD = 0.08    // Slightly lower for soft strums
+    private let PITCH_CLASS_ENERGY_THRESHOLD = 0.08
     private let MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD = 2
-    private let TEMPLATE_MATCH_THRESHOLD = 0.07        // Lower for imperfect technique
+    private let TEMPLATE_MATCH_THRESHOLD = 0.07
     private let MIN_TEMPLATE_MATCH = 2
-    
+
     // --- Anti-Mono Gates (safety) ---
-    private let MONO_DOMINANT_MIN = 0.58               // Slightly stricter on mono detection
-    private let MONO_SECOND_MAX = 0.20                 // If 2nd PC is > 20%, it's likely a chord
+    private let MONO_DOMINANT_MIN = 0.58
+    private let MONO_SECOND_MAX = 0.20
     private let HARMONIC_SUPPRESS_RATIO = 0.30
-    
+
     // --- Temporal / Hysteresis ---
-    private let CHROMA_HISTORY_WINDOW_MS = 300         // Shorter for faster response
-    private let COACTIVATION_MIN_FRAMES = 1            // Only 1 frame needed (faster)
+    private let CHROMA_HISTORY_WINDOW_MS = 300
+    private let COACTIVATION_MIN_FRAMES = 1
     private let COACTIVATION_ACTIVE_THRESHOLD = 0.08
-    
+
     // --- Chord State Hysteresis ---
-    private let CHORD_ENTRY_FRAMES = 1                 // Frames needed to enter chord mode
-    private let CHORD_EXIT_FRAMES = 2                  // Frames without valid chord to exit
-    private let CHORD_HOLD_MS = 150                    // Minimum hold time before exiting chord mode
-    
+    private let CHORD_ENTRY_FRAMES = 1
+    private let CHORD_EXIT_FRAMES = 2
+    private let CHORD_HOLD_MS = 150
+
     // ============================================================
     // MARK: - Internal State
     // ============================================================
-    
+
     private var lastChordProcessTimeMs = 0
     private var cachedChordIntervalMs: Int? = nil
     private var cachedChordIntervalKey: String? = nil
-    
+
     // Chord hysteresis state
     private var chordActive = false
     private var chordEntryCounter = 0
     private var chordExitCounter = 0
     private var lastChordEmitTimeMs = 0
     private var pendingChordCandidate: (root: Int, quality: DetectedChordQuality, confidence: Double)? = nil
-    
+
     // Chroma history
     private struct ChromaFrame {
         let timestampMs: Int
@@ -88,12 +127,17 @@ final class NativeAudioPipeline {
     // ============================================================
     // MARK: - Lifecycle
     // ============================================================
-    
+
     func start() {
         isActive = true
         isSilent = true
-        resetChordState()
         lastSignalTimeMs = 0
+
+        // Reset pitch state
+        resetPitchState()
+
+        // Reset chord state
+        resetChordState()
         lastChordProcessTimeMs = 0
         cachedChordIntervalMs = nil
         cachedChordIntervalKey = nil
@@ -110,6 +154,9 @@ final class NativeAudioPipeline {
         isActive = false
         pitchService.stop()
         chordService.stop()
+
+        resetPitchState()
+
         resetChordState()
         cachedChordIntervalMs = nil
         cachedChordIntervalKey = nil
@@ -123,7 +170,18 @@ final class NativeAudioPipeline {
             mode = .standard
         }
     }
-    
+
+    private func resetPitchState() {
+        pitchState = .idle
+        onsetStartMs = 0
+        steadyCandidateCount = 0
+        lastStableFrequency = nil
+        lastPitchTimestampMs = 0
+
+        lastZeroCrossFrequency = nil
+        lastZeroCrossTimestampMs = 0
+    }
+
     private func resetChordState() {
         chordActive = false
         chordEntryCounter = 0
@@ -134,10 +192,22 @@ final class NativeAudioPipeline {
 
     func onOnset(timestampSec: Double) {
         let ts = Int(timestampSec * 1000)
+
+        // Pitch: enter onset
+        pitchState = .onset
+        onsetStartMs = ts
+        steadyCandidateCount = 0
+        lastStableFrequency = nil
+        lastPitchTimestampMs = ts
+
+        lastZeroCrossFrequency = nil
+        lastZeroCrossTimestampMs = 0
+
+        // Global signal bookkeeping
         lastSignalTimeMs = ts
         isSilent = false
-        
-        // On onset: reset chord state but keep history for quick re-detection
+
+        // Chord: reset state (history kept for quick re-detection)
         resetChordState()
         lastChordProcessTimeMs = 0
         cachedChordIntervalMs = nil
@@ -145,9 +215,9 @@ final class NativeAudioPipeline {
     }
 
     // ============================================================
-    // MARK: - NOTE Detection (always active unless chord confirmed)
+    // MARK: - NOTE Detection (with Pitch State Machine + ZC signal)
     // ============================================================
-    
+
     func onNoteSamples(
         samples: [Float],
         timestampSec: Double,
@@ -163,16 +233,26 @@ final class NativeAudioPipeline {
         lastSignalTimeMs = ts
         isSilent = false
 
-        // KEY CHANGE: Only block notes if chord is CONFIRMED active
-        // This is the hysteresis: chord must be stable before suppressing notes
-        // KEY CHANGE: Only block notes if chord is CONFIRMED active
-        // This is the hysteresis: chord must be stable before suppressing notes
-        // In Tuner mode, we never block notes
+        // In standard mode, block notes only if chord is CONFIRMED active.
         if mode != .tuner && chordActive { return }
+
+        // Safety: if for any reason we got here while idle (missed onset),
+        // initialize onset now but do NOT emit immediately.
+        if pitchState == .idle {
+            pitchState = .onset
+            onsetStartMs = ts
+            steadyCandidateCount = 0
+            lastStableFrequency = nil
+            lastPitchTimestampMs = ts
+
+            lastZeroCrossFrequency = nil
+            lastZeroCrossTimestampMs = 0
+            return
+        }
 
         pitchService.setSampleRate(sampleRate)
 
-        guard let det = pitchService.processSamples(
+        guard var det = pitchService.processSamples(
             samples: samples,
             timestampMs: ts,
             amplitude: Double(rms)
@@ -181,35 +261,150 @@ final class NativeAudioPipeline {
         guard
             let conf = det["confidence"] as? Double,
             conf >= NOTE_CONFIDENCE_THRESHOLD,
-            let freq = det["frequency"] as? Double,
-            freq > 0
+            let yinFreqRaw = det["frequency"] as? Double,
+            yinFreqRaw > 0
         else { return }
 
-        emitDetection?(det)
+        // ---------------------------------------------------------
+        // Step-1: Zero-cross as INTERNAL signal only (no emit)
+        // ---------------------------------------------------------
+        let zcFreqNow = ZeroCrossing.estimateFrequency(samples: samples, sampleRate: sampleRate)
+        if let z = zcFreqNow, z > 0 {
+            lastZeroCrossFrequency = z
+            lastZeroCrossTimestampMs = ts
+        }
+
+        // Octave resolution uses ZC + history (still internal)
+        let resolvedFreq = resolveOctaveAndClamp(yinFreqRaw, zcFreq: zcFreqNow, prevStable: lastStableFrequency)
+
+        // IMPORTANT: UI must see resolved frequency too (single final truth)
+        det = rewritePitchPayload(det: det, frequency: resolvedFreq)
+
+        // -----------------------------
+        // Pitch State Machine Decision
+        // -----------------------------
+        switch pitchState {
+
+        case .idle:
+            return
+
+        case .onset:
+            // Wait out transient window
+            if ts - onsetStartMs < ONSET_MIN_DURATION_MS {
+                return
+            }
+
+            // Base: require consecutive stable candidates
+            var newCount: Int = 1
+            if let prev = lastStableFrequency {
+                if isFrequencyClose(prev, resolvedFreq, pct: ONSET_STABILITY_PCT) {
+                    newCount = steadyCandidateCount + 1
+                } else {
+                    newCount = 1
+                }
+            } else {
+                newCount = 1
+            }
+
+            // ---------------------------------------------------------
+            // Step-2: Fast confirm WITHOUT changing STEADY_CONFIRM_FRAMES
+            // If candidate is stable-ish AND ZC supports it, count as "2"
+            // ---------------------------------------------------------
+            if newCount == 1 && STEADY_CONFIRM_FRAMES == 2 {
+                if shouldFastConfirmOnset(
+                    nowMs: ts,
+                    resolvedFreq: resolvedFreq,
+                    prevStable: lastStableFrequency
+                ) {
+                    newCount = 2
+                }
+            }
+
+            steadyCandidateCount = newCount
+
+            // Update candidate memory
+            lastStableFrequency = resolvedFreq
+            lastPitchTimestampMs = ts
+
+            if steadyCandidateCount >= STEADY_CONFIRM_FRAMES {
+                pitchState = .steady
+                steadyCandidateCount = 0
+                emitDetection?(det)
+            }
+            return
+
+        case .steady:
+            if let prev = lastStableFrequency {
+                if isOctaveFlip(prev: prev, next: resolvedFreq) {
+                    if centsDiff(prev, resolvedFreq) > OCTAVE_LOCK_MAX_CENTS {
+                        return
+                    }
+                }
+                if !passesSteadyJumpGate(prev, resolvedFreq) {
+                    // Treat as possible note transition: re-enter onset fast
+                    pitchState = .onset
+                    onsetStartMs = ts
+                    steadyCandidateCount = 0
+
+                    // Start candidate with new freq
+                    lastStableFrequency = resolvedFreq
+                    lastPitchTimestampMs = ts
+                    return
+                }
+            }
+
+            lastStableFrequency = resolvedFreq
+            lastPitchTimestampMs = ts
+            emitDetection?(det)
+            return
+        }
+    }
+
+    // ============================================================
+    // MARK: - Onset fast-confirm helper
+    // ============================================================
+
+    private func shouldFastConfirmOnset(nowMs: Int, resolvedFreq: Double, prevStable: Double?) -> Bool {
+        // Optional safety: require history
+        if FAST_CONFIRM_REQUIRES_HISTORY, (prevStable == nil || prevStable! <= 0) {
+            return false
+        }
+
+        // Require very recent ZC
+        guard let z = lastZeroCrossFrequency, z > 0 else { return false }
+        if nowMs - lastZeroCrossTimestampMs > ZC_VALIDITY_WINDOW_MS { return false }
+
+        // ZC should support the resolved freq (in cents)
+        if centsDiff(resolvedFreq, z) > ZC_SUPPORT_MAX_CENTS { return false }
+
+        // If we have history, also require continuity-ish (avoid random accept)
+        if let prev = prevStable, prev > 0 {
+            if !isFrequencyClose(prev, resolvedFreq, pct: ONSET_STABILITY_PCT) {
+                // Not close to previous candidate; don't fast confirm
+                return false
+            }
+        }
+
+        return true
     }
 
     // ============================================================
     // MARK: - CHORD Detection (parallel track with hysteresis)
     // ============================================================
-    
+
     func onChordSamples(
         samples: [Float],
         timestampSec: Double,
         sampleRate: Double,
         rms: Float
     ) {
-
-        // Tuner mode disables chord detection entirely
         guard isActive, mode != .tuner else { return }
-
-        // RMS gate (lower threshold for soft strums)
         if rms < RMS_CHORD_THRESHOLD { return }
 
         let ts = Int(timestampSec * 1000)
         lastSignalTimeMs = ts
         isSilent = false
 
-        // Dynamic interval (faster for lower latency)
         let intervalMs = getChordIntervalMs(windowSize: samples.count, sampleRate: sampleRate)
         if ts - lastChordProcessTimeMs < intervalMs { return }
         lastChordProcessTimeMs = ts
@@ -221,41 +416,31 @@ final class NativeAudioPipeline {
     // ============================================================
     // MARK: - CHORD Semantic Decision (with hysteresis)
     // ============================================================
-    
+
     private func handleChordResult(_ result: ChordDetectionResult) {
         guard isActive else { return }
 
         let chroma = result.chroma
         guard chroma.count == 12 else { return }
-        
+
         pushChromaFrame(timestampMs: result.timestamp, chroma: chroma)
-        
-        // Evaluate chord candidate
+
         guard let cand = result.candidate else {
             handleNoChordCandidate(timestamp: result.timestamp)
             return
         }
-        
+
         let conf = cand.confidence
-        
-        // Basic confidence gate (lowered, rely on structural gates)
         if conf < CHORD_CONFIDENCE_THRESHOLD {
             handleNoChordCandidate(timestamp: result.timestamp)
             return
         }
-        
-        // Use current frame chroma for faster response (not averaged)
-        // Only use averaged for stability checks
+
         let instantChroma = chroma
         let avgChroma = averagedChromaInWindow(nowMs: result.timestamp)
-        
-        // --- STRUCTURAL SAFETY GATES ---
-        // These are the hard gates that prevent single notes from being classified as chords
-        
-        // 1) Monophonic dominance check (on averaged chroma for stability)
+
         let mono = isMonophonicDominant(chroma: avgChroma)
         if mono {
-            // If monophonic, apply harmonic suppression and re-check
             let suppressed = suppressHarmonicIllusions(chroma: avgChroma)
             let suppressedActive = countActivePitchClasses(chroma: suppressed, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
             if suppressedActive < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD {
@@ -263,21 +448,18 @@ final class NativeAudioPipeline {
                 return
             }
         }
-        
-        // 2) Active pitch class count (on instant chroma for responsiveness)
+
         let activeCount = countActivePitchClasses(chroma: instantChroma, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
         if activeCount < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD {
             handleNoChordCandidate(timestamp: result.timestamp)
             return
         }
-        
-        // 3) Interval skeleton gate: must have 3rd AND 5th
+
         if !passesIntervalSkeletonGate(chroma: instantChroma, root: cand.root, quality: cand.quality) {
             handleNoChordCandidate(timestamp: result.timestamp)
             return
         }
-        
-        // 4) Template match (at least 2 of 3 chord tones present)
+
         let requiredPCs = chordPitchClasses(root: cand.root, quality: cand.quality)
         var matchCount = 0
         for pc in requiredPCs {
@@ -289,8 +471,7 @@ final class NativeAudioPipeline {
             handleNoChordCandidate(timestamp: result.timestamp)
             return
         }
-        
-        // --- PASSED ALL GATES: This is a valid chord candidate ---
+
         handleValidChordCandidate(
             root: cand.root,
             quality: cand.quality,
@@ -298,58 +479,48 @@ final class NativeAudioPipeline {
             timestamp: result.timestamp
         )
     }
-    
+
     private func handleValidChordCandidate(
         root: Int,
         quality: DetectedChordQuality,
         confidence: Double,
         timestamp: Int
     ) {
-        // Reset exit counter since we have a valid candidate
         chordExitCounter = 0
-        
-        // Strong confidence = immediate activation
+
         if confidence >= CHORD_CONFIDENCE_STRONG {
             activateChord(root: root, quality: quality, confidence: confidence, timestamp: timestamp)
             return
         }
-        
-        // Normal confidence = use hysteresis
+
         if chordActive {
-            // Already active, just emit (chord continuation)
             emitChord(root: root, quality: quality, confidence: confidence, timestamp: timestamp)
         } else {
-            // Not active yet, increment entry counter
             chordEntryCounter += 1
             pendingChordCandidate = (root, quality, confidence)
-            
+
             if chordEntryCounter >= CHORD_ENTRY_FRAMES {
                 activateChord(root: root, quality: quality, confidence: confidence, timestamp: timestamp)
             }
         }
     }
-    
+
     private func handleNoChordCandidate(timestamp: Int) {
-        // No valid chord in this frame
         chordEntryCounter = 0
         pendingChordCandidate = nil
-        
+
         if chordActive {
-            // Check if we should exit chord mode
             let timeSinceLastEmit = timestamp - lastChordEmitTimeMs
-            
             if timeSinceLastEmit > CHORD_HOLD_MS {
                 chordExitCounter += 1
-                
                 if chordExitCounter >= CHORD_EXIT_FRAMES {
-                    // Exit chord mode
                     chordActive = false
                     chordExitCounter = 0
                 }
             }
         }
     }
-    
+
     private func activateChord(
         root: Int,
         quality: DetectedChordQuality,
@@ -361,7 +532,7 @@ final class NativeAudioPipeline {
         chordExitCounter = 0
         emitChord(root: root, quality: quality, confidence: confidence, timestamp: timestamp)
     }
-    
+
     private func emitChord(
         root: Int,
         quality: DetectedChordQuality,
@@ -369,7 +540,7 @@ final class NativeAudioPipeline {
         timestamp: Int
     ) {
         lastChordEmitTimeMs = timestamp
-        
+
         emitDetection?([
             "timestamp": timestamp,
             "confidence": confidence,
@@ -385,12 +556,13 @@ final class NativeAudioPipeline {
     // ============================================================
     // MARK: - Silence
     // ============================================================
-    
+
     func tickSilenceCheck(nowSec: Double) {
         guard isActive, !isSilent else { return }
         let now = Int(nowSec * 1000)
         if now - lastSignalTimeMs > SILENCE_TIMEOUT_MS {
             isSilent = true
+            resetPitchState()
             resetChordState()
             chromaHistory = []
             emitDetection?(nil)
@@ -400,21 +572,20 @@ final class NativeAudioPipeline {
     // ============================================================
     // MARK: - Dynamic Chord Interval
     // ============================================================
-    
+
     private func getChordIntervalMs(windowSize: Int, sampleRate: Double) -> Int {
         let key = "\(windowSize)@\(Int(sampleRate))"
-        
+
         if let cached = cachedChordIntervalMs, cachedChordIntervalKey == key {
             return cached
         }
-        
+
         let windowDurationMs = Double(windowSize) / sampleRate * 1000.0
         let raw = windowDurationMs * CHORD_RATE_FACTOR
         let clamped = max(CHORD_RATE_MIN_MS, min(Int(raw), CHORD_RATE_MAX_MS))
-        
+
         cachedChordIntervalKey = key
         cachedChordIntervalMs = clamped
-        
         return clamped
     }
 
@@ -466,7 +637,6 @@ final class NativeAudioPipeline {
                 max2 = v
             }
         }
-        // If top bin is very dominant AND second bin is weak = monophonic
         return (max1 >= MONO_DOMINANT_MIN) && (max2 <= MONO_SECOND_MAX)
     }
 
@@ -484,8 +654,8 @@ final class NativeAudioPipeline {
         if domVal <= 0 { return chroma }
 
         let harmonicTargets = [
-            (domPc + 7) % 12,  // Perfect 5th
-            (domPc + 4) % 12   // Major 3rd
+            (domPc + 7) % 12,
+            (domPc + 4) % 12
         ]
 
         var out = chroma
@@ -521,18 +691,107 @@ final class NativeAudioPipeline {
         let thirdE = chroma[third]
         let fifthE = chroma[fifth]
 
-        // Both 3rd and 5th must be present
         let thirdOK = thirdE >= TEMPLATE_MATCH_THRESHOLD
         let fifthOK = fifthE >= TEMPLATE_MATCH_THRESHOLD
 
         if !(thirdOK && fifthOK) { return false }
 
-        // Extra safety: if root overwhelmingly dominates, suspicious
         if rootE >= 0.80 && (thirdE < 0.10 || fifthE < 0.10) {
             return false
         }
 
         return true
+    }
+
+    // ============================================================
+    // MARK: - Pitch Helpers
+    // ============================================================
+
+    private func isFrequencyClose(_ a: Double, _ b: Double, pct: Double) -> Bool {
+        guard a > 0, b > 0 else { return false }
+        let tol = max(a * pct, STEADY_MAX_JUMP_HZ_FLOOR)
+        return abs(a - b) <= tol
+    }
+
+    private func passesSteadyJumpGate(_ prev: Double, _ next: Double) -> Bool {
+        guard prev > 0, next > 0 else { return false }
+        let tol = max(prev * STEADY_MAX_JUMP_PCT, STEADY_MAX_JUMP_HZ_FLOOR)
+        return abs(next - prev) <= tol
+    }
+
+    private func centsDiff(_ a: Double, _ b: Double) -> Double {
+        guard a > 0, b > 0 else { return Double.greatestFiniteMagnitude }
+        return abs(1200.0 * log2(a / b))
+    }
+
+    private func isOctaveFlip(prev: Double, next: Double) -> Bool {
+        let up = centsDiff(next, prev * 2.0)
+        let down = centsDiff(next, prev * 0.5)
+        return min(up, down) < 80.0
+    }
+
+    /// Resolve YIN octave ambiguity using Zero-Crossing as a guide (internal),
+    /// then clamp into guitar range.
+    private func resolveOctaveAndClamp(_ yinFreq: Double, zcFreq: Double?, prevStable: Double?) -> Double {
+        var f = yinFreq
+
+        // 1) If we have a decent zero-cross estimate, pick octave variant closest to it
+        if let z = zcFreq, z > 0 {
+            let candidates = [yinFreq, yinFreq * 0.5, yinFreq * 2.0]
+            var best = yinFreq
+            var bestCents = Double.greatestFiniteMagnitude
+            for c in candidates where c > 0 {
+                let d = centsDiff(c, z)
+                if d < bestCents {
+                    bestCents = d
+                    best = c
+                }
+            }
+            if bestCents <= OCTAVE_RESOLVE_MAX_CENTS {
+                f = best
+            }
+        }
+
+        // 2) Continuity preference (octave lock to history)
+        if let prev = prevStable, prev > 0 {
+            let candidates = [f, f * 0.5, f * 2.0]
+            var best = f
+            var bestCents = Double.greatestFiniteMagnitude
+            for c in candidates where c > 0 {
+                let d = centsDiff(c, prev)
+                if d < bestCents {
+                    bestCents = d
+                    best = c
+                }
+            }
+            if bestCents <= 120.0 {
+                f = best
+            }
+        }
+
+        // 3) Clamp to guitar-ish range
+        let minF = MusicTheory.GUITAR_MIN_FREQ - 15.0
+        let maxF = MusicTheory.GUITAR_MAX_FREQ + 150.0
+        if f < minF { f = minF }
+        if f > maxF { f = maxF }
+
+        return f
+    }
+
+    /// Rewrite detection payload so UI + downstream always see the resolved frequency & note.
+    private func rewritePitchPayload(det: [String: Any], frequency: Double) -> [String: Any] {
+        var out = det
+        out["frequency"] = frequency
+
+        let note = MusicTheory.frequencyToNote(
+            frequency,
+            confidence: (det["confidence"] as? Double) ?? 1.0
+        )
+        out["note"] = [
+            "name": note.name,
+            "octave": note.octave
+        ]
+        return out
     }
 
     // ============================================================
