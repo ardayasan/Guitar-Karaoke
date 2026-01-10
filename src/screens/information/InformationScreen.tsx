@@ -1,12 +1,6 @@
 import React from "react";
 import { ScrollView, View, StyleSheet } from "react-native";
-import {
-    Text,
-    Title,
-    Paragraph,
-    Icon,
-    Divider,
-} from "react-native-paper";
+import { Text, Icon } from "react-native-paper";
 import { LinearGradient } from "expo-linear-gradient";
 
 import colors from "@/theme/colors";
@@ -18,121 +12,97 @@ export default function InformationScreen() {
     return (
         <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
-        {/* HERO HEADER */}
-        <LinearGradient
-            colors={[
-            colors.bg.heroTop,
-            colors.bg.heroMid,
-            colors.bg.heroBottom,
-            ]}
-            style={styles.hero}
-        >
-            <Title style={styles.heroTitle}>SmartTab</Title>
-            <Paragraph style={styles.heroSubtitle}>
-            Real-time guitar practice assistant
-            </Paragraph>
-            <Text style={styles.heroTagline}>
-            We listen while you play and guide you instantly.
-            </Text>
-        </LinearGradient>
+            {/* HERO HEADER */}
+            <LinearGradient
+                colors={[
+                    colors.bg.heroTop,
+                    colors.bg.heroMid,
+                    colors.bg.heroBottom,
+                ]}
+                style={styles.hero}
+            >
+                <Text style={styles.heroTitle}>SmartTab</Text>
+                <Text style={styles.heroSubtitle}>
+                    Your AI Guitar Practice Assistant
+                </Text>
+            </LinearGradient>
 
-        {/* WHAT IS */}
-        <Section title="What is SmartTab?">
-            <Paragraph style={styles.paragraph}>
-            SmartTab is a practice assistant designed for guitar players who want
-            real-time feedback while playing. Instead of passively following tabs,
-            the app listens to your live performance and checks whether you hit
-            the correct notes.
-            </Paragraph>
+            <View style={styles.content}>
+                {/* WHAT IS */}
+                <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                        <View style={styles.iconWrap}>
+                            <Icon source="information-outline" size={24} color="#C77DFF" />
+                        </View>
+                        <Text style={styles.cardTitle}>What is SmartTab?</Text>
+                    </View>
+                    <Text style={styles.cardText}>
+                        SmartTab is a practice assistant designed for guitar players who want
+                        real-time feedback while playing. It listens to your live performance
+                        and checks whether you hit the correct notes.
+                    </Text>
+                </View>
 
-            <Paragraph style={styles.paragraph}>
-            It visually tracks your progress on the tablature and highlights
-            mistakes instantly—helping you correct technique before bad habits
-            settle in.
-            </Paragraph>
-        </Section>
+                {/* HOW IT WORKS */}
+                <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                        <View style={styles.iconWrap}>
+                            <Icon source="help-circle-outline" size={24} color="#C77DFF" />
+                        </View>
+                        <Text style={styles.cardTitle}>How it works</Text>
+                    </View>
+                    <Step number="1" text="Choose a song from the library" />
+                    <Step number="2" text="Allow microphone access" />
+                    <Step number="3" text="Play along with the tab" />
+                    <Step number="4" text="Get instant visual feedback" />
+                </View>
 
-        {/* HOW IT WORKS */}
-        <Section title="How it works">
-            <Step icon="folder-music-outline" text="Choose a tablature from the library." />
-            <Step icon="microphone-outline" text="Allow microphone access for live listening." />
-            <Step icon="guitar-acoustic" text="Play along with the tab in real time." />
-            <Step icon="check-circle-outline" text="Get instant visual feedback and scoring." />
-        </Section>
+                {/* CORE FEATURES */}
+                <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                        <View style={styles.iconWrap}>
+                            <Icon source="star-outline" size={24} color="#C77DFF" />
+                        </View>
+                        <Text style={styles.cardTitle}>Core Features</Text>
+                    </View>
+                    <Feature text="Real-time pitch detection" />
+                    <Feature text="Automatic audio-tab sync" />
+                    <Feature text="Instant note feedback" />
+                    <Feature text="Accuracy scoring" />
+                    <Feature text="Local processing" />
+                </View>
 
-        {/* CORE FEATURES — CENTER TITLE / LEFT LIST */}
-        <Section
-            title="Core features"
-            contentAlign="left"
-        >
-            <Feature text="Real-time pitch detection optimized for guitar frequencies." />
-            <Feature text="Automatic sync between audio input and tablature playback." />
-            <Feature text="Immediate correct / incorrect note feedback." />
-            <Feature text="Accuracy scoring to track improvement over time." />
-            <Feature text="Local processing – no cloud dependency while practicing." />
-        </Section>
-
-        {/* VISION */}
-        <Section title="Our goal">
-            <Paragraph style={styles.paragraph}>
-            Learning an instrument alone can be frustrating without instant
-            correction. SmartTab aims to provide the feeling of a personal digital
-            tutor: always listening, always guiding, always patient.
-            </Paragraph>
-        </Section>
-
-        {/* CREDITS */}
-        <Section title="Built by">
-            <View style={styles.creditBox}>
-            <Text style={styles.creditText}>Arda Yasan</Text>
-            <Text style={styles.creditText}>Burak Kuruçay</Text>
+                {/* CREDITS */}
+                <View style={styles.creditCard}>
+                    <Text style={styles.creditTitle}>Built with 💜 by</Text>
+                    <View style={styles.creditNames}>
+                        <Text style={styles.creditName}>Arda Yasan</Text>
+                        <Text style={styles.creditDivider}>•</Text>
+                        <Text style={styles.creditName}>Burak Kuruçay</Text>
+                    </View>
+                    <Text style={styles.creditNote}>
+                        An experimental music-tech project focused on real-time audio analysis.
+                    </Text>
+                </View>
             </View>
-
-            <Text style={styles.creditNote}>
-            Developed as an academic and experimental music-tech project focused
-            on real-time audio analysis.
-            </Text>
-        </Section>
 
         </ScrollView>
     );
 }
 
-
 /* SUB COMPONENTS */
-const Section = ({
-    title,
-    contentAlign = "center",
-    children,
-    }: {
-    title: string;
-    contentAlign?: "center" | "left";
-    children: React.ReactNode;
-    }) => (
-    <View style={[
-        styles.section,
-        contentAlign === "left" && styles.sectionLeft,
-    ]}>
-
-        {/* HEADERS ALWAYS CENTER */}
-        <Title style={styles.sectionTitle}>{title}</Title>
-        <Divider style={styles.divider} />
-
-        {children}
-
-    </View>
-    );
-
-    const Step = ({ icon, text }: { icon: string; text: string }) => (
+const Step = ({ number, text }: { number: string; text: string }) => (
     <View style={styles.stepRow}>
-        <Icon source={icon} size={22} color={colors.brand.primary} />
+        <View style={styles.stepNumber}>
+            <Text style={styles.stepNumberText}>{number}</Text>
+        </View>
         <Text style={styles.stepText}>{text}</Text>
     </View>
-    );
+);
 
-    const Feature = ({ text }: { text: string }) => (
+const Feature = ({ text }: { text: string }) => (
     <View style={styles.featureRow}>
-        <Text style={styles.bullet}>•</Text>
+        <Icon source="check" size={16} color="#53ff9a" />
         <Text style={styles.featureText}>{text}</Text>
     </View>
 );
@@ -147,67 +117,64 @@ const styles = StyleSheet.create({
 
     /* HERO */
     hero: {
-        paddingTop: 52,
-        paddingBottom: 36,
-        paddingHorizontal: 16,
+        paddingTop: 40,
+        paddingBottom: 30,
+        paddingHorizontal: 24,
         alignItems: "center",
     },
-
     heroTitle: {
         color: colors.text.primary,
-        fontSize: 30,
-        fontWeight: "700",
-        letterSpacing: 1.2,
+        fontSize: 36,
+        fontWeight: "800",
+        letterSpacing: 1,
+        textShadowColor: "rgba(199,125,255,0.5)",
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 8,
     },
-
     heroSubtitle: {
         marginTop: 6,
         color: colors.text.secondary,
         fontSize: 14,
+        letterSpacing: 0.3,
     },
 
-    heroTagline: {
-        marginTop: 6,
-        color: colors.text.subtle,
-        fontSize: 12,
-        textAlign: "center",
-        maxWidth: 280,
+    /* CONTENT */
+    content: {
+        padding: 20,
     },
 
-    /* SECTIONS */
-    section: {
-        paddingHorizontal: 16,
-        paddingTop: 18,
+    /* CARDS */
+    card: {
+        backgroundColor: "rgba(36,0,56,0.8)",
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: "rgba(199,125,255,0.2)",
+    },
+    cardHeader: {
+        flexDirection: "row",
         alignItems: "center",
+        marginBottom: 16,
     },
-
-    sectionLeft: {
-        alignItems: "flex-start",
+    iconWrap: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: "rgba(199,125,255,0.15)",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 12,
     },
-
-    sectionTitle: {
-        color: colors.text.primary,
+    cardTitle: {
         fontSize: 18,
-        marginBottom: 6,
-        letterSpacing: 0.4,
-        textAlign: "center",
-        alignSelf: "center",
+        fontWeight: "700",
+        color: "#fff",
     },
-
-    divider: {
-        backgroundColor: colors.flow.line,
-        marginBottom: 14,
-        height: 1,
-        width: 120,
-        alignSelf: "center",
-    },
-
-    paragraph: {
-        color: colors.text.secondary,
-        lineHeight: 20,
-        marginBottom: 12,
-        textAlign: "justify",
-        maxWidth: 340,
+    cardText: {
+        color: "rgba(255,255,255,0.8)",
+        fontSize: 14,
+        lineHeight: 22,
     },
 
     /* STEPS */
@@ -215,12 +182,23 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         marginBottom: 12,
-        maxWidth: 340,
     },
-
+    stepNumber: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: "rgba(199,125,255,0.3)",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 12,
+    },
+    stepNumberText: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: "#fff",
+    },
     stepText: {
-        marginLeft: 10,
-        color: colors.text.primary,
+        color: "rgba(255,255,255,0.85)",
         fontSize: 14,
     },
 
@@ -228,43 +206,48 @@ const styles = StyleSheet.create({
     featureRow: {
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 8,
-        maxWidth: 340,
+        marginBottom: 10,
     },
-
-    bullet: {
-        color: colors.brand.primary,
-        fontSize: 18,
-        marginRight: 8,
-    },
-
     featureText: {
-        color: colors.text.primary,
+        marginLeft: 10,
+        color: "rgba(255,255,255,0.85)",
         fontSize: 14,
-        opacity: 0.9,
-        flexShrink: 1,
     },
 
     /* CREDITS */
-    creditBox: {
+    creditCard: {
+        backgroundColor: "rgba(199,125,255,0.1)",
+        borderRadius: 16,
+        padding: 24,
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: "rgba(199,125,255,0.2)",
+        marginBottom: 32,
+    },
+    creditTitle: {
+        fontSize: 14,
+        color: "rgba(255,255,255,0.7)",
+        marginBottom: 8,
+    },
+    creditNames: {
         flexDirection: "row",
-        justifyContent: "center",
-        gap: 24,
-        marginVertical: 12,
+        alignItems: "center",
+        gap: 12,
+        marginBottom: 12,
     },
-
-    creditText: {
-        color: colors.text.primary,
-        fontSize: 15,
-        fontWeight: "600",
+    creditName: {
+        fontSize: 16,
+        fontWeight: "700",
+        color: "#fff",
     },
-
+    creditDivider: {
+        color: "#C77DFF",
+        fontSize: 16,
+    },
     creditNote: {
         textAlign: "center",
-        color: colors.text.subtle,
+        color: "rgba(255,255,255,0.6)",
         fontSize: 12,
-        opacity: 0.8,
-        marginBottom: 28,
-        paddingHorizontal: 12,
+        lineHeight: 18,
     },
 });

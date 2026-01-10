@@ -45,15 +45,15 @@ export default function CurrentDetectionDisplayer({
 
     return (
         <Surface style={styles.container}>
-        <Text style={styles.label}>CURRENT DETECTION</Text>
+            <Text style={styles.label}>CURRENT DETECTION</Text>
 
-        <Text style={[styles.value, { color }]}>
-            {value ?? "--"}
-        </Text>
+            <Text style={[styles.value, { color }]}>
+                {value ?? "--"}
+            </Text>
 
-        <Text style={styles.kind}>
-            {kindLabel}
-        </Text>
+            <Text style={styles.kind}>
+                {kindLabel}
+            </Text>
         </Surface>
     );
 }
@@ -67,12 +67,12 @@ function getColorForFeedback(
 ) {
     switch (feedback) {
         case "correct":
-        return "#53ff9a";
+            return "#53ff9a";
         case "incorrect":
-        return "#ff5c5c";
+            return "#ff5c5c";
         case "neutral":
         default:
-        return colors.text.subtle;
+            return colors.text.subtle;
     }
 }
 
@@ -94,35 +94,36 @@ function getLabelForKind(kind: DetectionKind) {
 /* -------------------------------------------------- */
 const styles = StyleSheet.create({
     container: {
-        marginBottom: 12,
-        paddingVertical: 22,
-        borderRadius: 16,
+        marginBottom: 8,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 12,
         alignItems: "center",
         backgroundColor: "rgba(36,0,56,0.65)",
         borderWidth: 1.5,
         borderColor: "rgba(199,125,255,0.5)",
         shadowColor: "#C77DFF",
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.55,
-        shadowRadius: 14,
+        shadowOpacity: 0.45,
+        shadowRadius: 10,
     },
 
     label: {
         color: colors.text.subtle,
-        letterSpacing: 1,
-        fontSize: 12,
-        marginBottom: 6,
+        letterSpacing: 0.8,
+        fontSize: 10,
+        marginBottom: 2,
     },
 
     value: {
-        fontSize: 54,
+        fontSize: 32,
         fontWeight: "800",
     },
 
     kind: {
-        marginTop: 4,
-        fontSize: 11,
-        letterSpacing: 0.8,
+        marginTop: 2,
+        fontSize: 9,
+        letterSpacing: 0.6,
         textTransform: "uppercase",
         color: colors.text.subtle,
         opacity: 0.75,

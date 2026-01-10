@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
-import { Text, Button } from 'react-native-paper';
+import { View, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import { Text } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import colors from '@/theme/colors';
 import { AudioPipeline } from '@/services/audio/AudioPipeline';
 
@@ -45,17 +46,14 @@ export default function TunerScreen() {
     const { name, octave, frequency } = detection.note;
     setDetectedNote({ name, octave, frequency });
 
-    // Find the closest target note
     const targetNote = GUITAR_STRINGS.find(
       (s) => s.name === name && s.octave === octave
     );
 
     if (targetNote && frequency) {
-      // Calculate cents difference
       const centsOff = 1200 * Math.log2(frequency / targetNote.frequency);
       setCents(Math.round(centsOff));
 
-      // Determine tuning status (within 5 cents is perfect)
       if (Math.abs(centsOff) <= 5) {
         setTuningStatus('perfect');
       } else if (centsOff < 0) {
@@ -99,25 +97,8 @@ export default function TunerScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.content}>
-        <Text style={styles.title}>Guitar Tuner</Text>
-
-        {/* Reference strings */}
-        <View style={styles.stringsContainer}>
-          {GUITAR_STRINGS.map((string) => (
-            <View key={string.string} style={styles.stringRow}>
-              <Text style={styles.stringNumber}>{string.string}</Text>
-              <Text style={styles.stringNote}>
-                {string.name}{string.octave}
-              </Text>
-              <Text style={styles.stringFreq}>
-                {string.frequency.toFixed(2)} Hz
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Detection display */}
-        <View style={styles.detectionContainer}>
+        {/* Detection Card */}
+        <View style={styles.detectionCard}>
           {detectedNote ? (
             <>
               <Text style={[styles.detectedNote, { color: getTuningColor() }]}>
@@ -148,6 +129,7 @@ export default function TunerScreen() {
         {tuningStatus && (
           <View style={styles.indicatorContainer}>
             <View style={styles.indicatorBar}>
+              <View style={styles.indicatorCenter} />
               <View
                 style={[
                   styles.indicatorMarker,
@@ -166,28 +148,40 @@ export default function TunerScreen() {
           </View>
         )}
 
-        {/* Controls */}
-        <View style={styles.controls}>
-          {!isListening ? (
-            <Button
-              mode="contained"
-              onPress={handleStartListening}
-              style={styles.startButton}
-              buttonColor={colors.brand.primary}
-            >
-              Start Tuning
-            </Button>
-          ) : (
-            <Button
-              mode="outlined"
-              onPress={handleStopListening}
-              style={styles.stopButton}
-              textColor={colors.feedback.incorrect}
-            >
-              Stop
-            </Button>
-          )}
+        {/* String Reference Cards */}
+        <View style={styles.stringsGrid}>
+          {GUITAR_STRINGS.map((string) => (
+            <View key={string.string} style={styles.stringCard}>
+              <Text style={styles.stringNumber}>{string.string}</Text>
+              <Text style={styles.stringNote}>{string.name}{string.octave}</Text>
+              <Text style={styles.stringFreq}>{string.frequency.toFixed(0)}Hz</Text>
+            </View>
+          ))}
         </View>
+
+        {/* Controls */}
+        <TouchableOpacity
+          style={[
+            styles.mainButton,
+            isListening && styles.mainButtonStop
+          ]}
+          activeOpacity={0.9}
+          onPress={isListening ? handleStopListening : handleStartListening}
+        >
+          <LinearGradient
+            colors={isListening
+              ? ['#ff5c5c', '#ff3333']
+              : ['#7A3CFF', '#C77DFF']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.mainButtonGradient}
+          >
+            <Text style={styles.mainButtonText}>
+              {isListening ? 'Stop' : 'Start Tuning'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -200,73 +194,42 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 16,
+    padding: 20,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  stringsContainer: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 24,
-  },
-  stringRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  stringNumber: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.utility.accent,
-    width: 30,
-  },
-  stringNote: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.text.primary,
-    flex: 1,
-  },
-  stringFreq: {
-    fontSize: 14,
-    color: colors.text.subtle,
-  },
-  detectionContainer: {
+
+  /* Detection Card */
+  detectionCard: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
-    backgroundColor: 'rgba(122,60,255,0.15)',
-    borderRadius: 16,
-    borderWidth: 2,
+    backgroundColor: 'rgba(36,0,56,0.8)',
+    borderRadius: 20,
+    borderWidth: 1,
     borderColor: 'rgba(199,125,255,0.3)',
-    marginBottom: 24,
-    minHeight: 200,
+    marginBottom: 20,
+    minHeight: 180,
+    shadowColor: '#C77DFF',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
   },
   detectedNote: {
-    fontSize: 72,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    fontSize: 64,
+    fontWeight: '800',
+    marginBottom: 4,
   },
   frequency: {
-    fontSize: 18,
+    fontSize: 16,
     color: colors.text.subtle,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   tuningStatus: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   cents: {
-    fontSize: 16,
+    fontSize: 14,
     color: colors.text.subtle,
   },
   waitingText: {
@@ -274,8 +237,11 @@ const styles = StyleSheet.create({
     color: colors.text.subtle,
     textAlign: 'center',
   },
+
+  /* Indicator */
   indicatorContainer: {
-    marginBottom: 32,
+    marginBottom: 24,
+    paddingHorizontal: 8,
   },
   indicatorBar: {
     height: 8,
@@ -284,30 +250,89 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     position: 'relative',
   },
+  indicatorCenter: {
+    position: 'absolute',
+    left: '50%',
+    width: 2,
+    height: 16,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    top: -4,
+    marginLeft: -1,
+  },
   indicatorMarker: {
     position: 'absolute',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    top: -4,
-    marginLeft: -8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    top: -6,
+    marginLeft: -10,
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   indicatorLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   indicatorLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.text.subtle,
   },
-  controls: {
+
+  /* String Grid */
+  stringsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  stringCard: {
+    width: (SCREEN_WIDTH - 60) / 3,
+    backgroundColor: 'rgba(36,0,56,0.6)',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(199,125,255,0.2)',
+  },
+  stringNumber: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#C77DFF',
+    marginBottom: 4,
+  },
+  stringNote: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  stringFreq: {
+    fontSize: 11,
+    color: colors.text.subtle,
+    marginTop: 2,
+  },
+
+  /* Main Button */
+  mainButton: {
     marginTop: 'auto',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#C77DFF',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
   },
-  startButton: {
-    borderRadius: 12,
+  mainButtonStop: {
+    shadowColor: '#ff5c5c',
   },
-  stopButton: {
-    borderRadius: 12,
-    borderColor: colors.feedback.incorrect,
+  mainButtonGradient: {
+    paddingVertical: 18,
+    alignItems: 'center',
+  },
+  mainButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.5,
   },
 });

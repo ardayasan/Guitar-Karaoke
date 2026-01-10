@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   StyleSheet,
   FlatList,
   Alert,
+  TouchableOpacity,
 } from "react-native";
 import {
   Searchbar,
@@ -13,13 +14,14 @@ import {
   Chip,
   Text,
   Button,
+  IconButton,
 } from "react-native-paper";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import * as DocumentPicker from "expo-document-picker";
 
 import { RootStackParamList } from "@/navigation/types";
-import { useLibraryStore } from "@/store";
+import { useLibraryStore, LibrarySection } from "@/store/libraryStore";
 import { PracticeTab } from "@/types/practice/PracticeTab";
 import colors from "@/theme/colors";
 import typography from "@/theme/typography";
@@ -34,11 +36,24 @@ export default function LibraryScreen() {
     setSearchQuery,
     getFilteredTabs,
     loadTabById,
+    activeSection,
+    setActiveSection,
+    loadCustomTabs,
+    deleteCustomTab,
+    customTabs,
+    isLoading,
   } = useLibraryStore();
 
   const filteredTabs = getFilteredTabs();
 
-/* ============================== */
+  // Load custom tabs on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      loadCustomTabs();
+    }, [loadCustomTabs])
+  );
+
+  /* ============================== */
 
   const handleImportTab = async () => {
     try {
@@ -58,7 +73,7 @@ export default function LibraryScreen() {
     }
   };
 
-/* ============================== */
+  /* ============================== */
 
   const handleSelectTab = (tab: PracticeTab) => {
     loadTabById(tab.id);
@@ -74,10 +89,26 @@ export default function LibraryScreen() {
     }, 50);
   };
 
-/* ============================== */
+  const handleDeleteCustomTab = (tab: PracticeTab) => {
+    Alert.alert(
+      "Delete Song",
+      `Are you sure you want to delete "${tab.metadata.title}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteCustomTab(tab.id),
+        },
+      ]
+    );
+  };
+
+  /* ============================== */
 
   const renderItem = ({ item }: { item: PracticeTab }) => {
     const { title, artist, difficulty, bpm } = item.metadata;
+    const isCustom = activeSection === "custom";
 
     return (
       <Card
@@ -87,13 +118,27 @@ export default function LibraryScreen() {
       >
         <Card.Content style={styles.cardContent}>
 
-          <Title style={styles.title}>
-            {title}
-          </Title>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardTitleArea}>
+              <Title style={styles.title}>
+                {title}
+              </Title>
 
-          <Paragraph style={styles.artist}>
-            {artist}
-          </Paragraph>
+              <Paragraph style={styles.artist}>
+                {artist}
+              </Paragraph>
+            </View>
+
+            {isCustom && (
+              <IconButton
+                icon="delete"
+                iconColor={colors.feedback.incorrect}
+                size={20}
+                onPress={() => handleDeleteCustomTab(item)}
+                style={styles.deleteButton}
+              />
+            )}
+          </View>
 
           <View style={styles.chipRow}>
 
@@ -112,11 +157,86 @@ export default function LibraryScreen() {
     );
   };
 
+  /* ============================== */
 
-/* ============================== */
+  const renderTabSelector = () => (
+    <View style={styles.tabSelector}>
+      <TouchableOpacity
+        style={[
+          styles.tabButton,
+          activeSection === "system" && styles.tabButtonActive,
+        ]}
+        onPress={() => setActiveSection("system")}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeSection === "system" && styles.tabTextActive,
+          ]}
+        >
+          System Tabs
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[
+          styles.tabButton,
+          activeSection === "custom" && styles.tabButtonActive,
+        ]}
+        onPress={() => setActiveSection("custom")}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeSection === "custom" && styles.tabTextActive,
+          ]}
+        >
+          My Songs ({customTabs.length})
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderEmptyState = () => {
+    if (activeSection === "system") {
+      return (
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>
+            No system tabs found
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyText}>
+          No custom songs yet
+        </Text>
+
+        <Text style={styles.emptySub}>
+          Create songs in the Songwriting tab
+        </Text>
+
+        <Button
+          mode="contained"
+          onPress={() => navigation.navigate("Songwriting" as any)}
+          style={styles.importBtn}
+          icon="plus"
+          textColor="#fff"
+        >
+          Create Song
+        </Button>
+      </View>
+    );
+  };
+
+  /* ============================== */
 
   return (
     <View style={styles.container}>
+
+      {renderTabSelector()}
 
       <Searchbar
         placeholder="Search tabs..."
@@ -128,31 +248,8 @@ export default function LibraryScreen() {
       />
 
       {filteredTabs.length === 0 ? (
-
-        <View style={styles.empty}>
-
-          <Text style={styles.emptyText}>
-            Your library is empty
-          </Text>
-
-          <Text style={styles.emptySub}>
-            Import GuitarPro or TXT tabs to start practicing
-          </Text>
-
-          <Button
-            mode="contained"
-            onPress={handleImportTab}
-            style={styles.importBtn}
-            icon="plus"
-            textColor="#fff"
-          >
-            Import Tab
-          </Button>
-
-        </View>
-
+        renderEmptyState()
       ) : (
-
         <FlatList
           data={filteredTabs}
           renderItem={renderItem}
@@ -160,7 +257,6 @@ export default function LibraryScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.list}
         />
-
       )}
 
     </View>
@@ -177,6 +273,38 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 6,
     backgroundColor: colors.bg.main,
+  },
+
+  /* TAB SELECTOR */
+
+  tabSelector: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
+    padding: 4,
+  },
+
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 10,
+  },
+
+  tabButtonActive: {
+    backgroundColor: colors.brand.primary,
+  },
+
+  tabText: {
+    color: colors.text.subtle,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  tabTextActive: {
+    color: "#fff",
   },
 
   /* SEARCH */
@@ -212,6 +340,20 @@ const styles = StyleSheet.create({
 
   cardContent: {
     paddingVertical: 16,
+  },
+
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+
+  cardTitleArea: {
+    flex: 1,
+  },
+
+  deleteButton: {
+    margin: -8,
   },
 
   /* TEXT */

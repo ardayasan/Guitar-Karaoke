@@ -116,11 +116,15 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   setDetectedNote: (note: { name: string; octave: number } | null) =>
     set({
       lastDetectedNote: note,
+      lastDetectedChord: null,
+
     }),
 
   setDetectedChord: (chord: { root: string; type: string } | null) =>
     set({
       lastDetectedChord: chord,
+      lastDetectedNote: null,
+
     }),
 
   /**

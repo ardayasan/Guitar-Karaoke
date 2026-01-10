@@ -1,280 +1,225 @@
 import React from "react";
-import { View, StyleSheet, TouchableOpacity } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
 import { Text, Icon } from "react-native-paper";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { RootStackParamList } from "@/navigation/types";
 import colors from "@/theme/colors";
 
-
 type Nav = StackNavigationProp<RootStackParamList, "Home">;
 
-const CTA_SIZE = 156;
-const MINI_SIZE = 70;
-const GAP = 40;
-const MINI_OFFSET_Y = 70;
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const CARD_WIDTH = SCREEN_WIDTH - 48;
 
 export default function HomeDescriptions() {
     const navigation = useNavigation<Nav>();
 
     return (
         <View style={styles.container}>
-
-        {/* CTA */}
-        <View style={styles.ctaWrapper}>
-
+            {/* Main CTA - Play Song */}
             <TouchableOpacity
-            style={styles.ctaButton}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate("Library")}
+                style={styles.mainCard}
+                activeOpacity={0.9}
+                onPress={() => navigation.navigate("Library")}
             >
-            <Icon
-                source="folder-music-outline"
-                size={34}
-                color="rgba(255,255,255,0.95)"
-            />
-
-            <Text style={styles.ctaText}>
-                Pick a Tab
-            </Text>
+                <LinearGradient
+                    colors={["#7A3CFF", "#C77DFF", "#E4B5FF"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.mainCardGradient}
+                >
+                    <View style={styles.mainCardContent}>
+                        <Icon
+                            source="play-circle"
+                            size={48}
+                            color="#fff"
+                        />
+                        <View style={styles.mainCardText}>
+                            <Text style={styles.mainCardTitle}>Play Song</Text>
+                            <Text style={styles.mainCardSubtitle}>
+                                Practice with tabs from your library
+                            </Text>
+                        </View>
+                        <Icon
+                            source="chevron-right"
+                            size={28}
+                            color="rgba(255,255,255,0.8)"
+                        />
+                    </View>
+                </LinearGradient>
             </TouchableOpacity>
 
-            {/* INFO — solda */}
-            <TouchableOpacity
-            style={[styles.utilityBtn, styles.infoBtn]}
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate("Information")}
-            >
-            <Icon
-                source="information-outline"
-                size={22}
-                color="rgba(255,255,255,0.95)"
-            />
-            </TouchableOpacity>
+            {/* Feature Cards Row */}
+            <View style={styles.featureRow}>
+                <TouchableOpacity
+                    style={styles.featureCard}
+                    activeOpacity={0.9}
+                    onPress={() => navigation.navigate("Songwriting")}
+                >
+                    <View style={styles.featureIconWrap}>
+                        <Icon
+                            source="pencil-plus"
+                            size={26}
+                            color="#C77DFF"
+                        />
+                    </View>
+                    <Text style={styles.featureTitle}>Create</Text>
+                    <Text style={styles.featureSubtitle}>New Song</Text>
+                </TouchableOpacity>
 
-            {/* SETTINGS — at the right */}
-            <TouchableOpacity
-            style={styles.utilityBtn}
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate("Settings")}
-            >
-            <Icon
-                source="cog-outline"
-                size={22}
-                color="#FFFFFF"
-            />
-            </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.featureCard}
+                    activeOpacity={0.9}
+                    onPress={() => navigation.navigate("Tuner")}
+                >
+                    <View style={styles.featureIconWrap}>
+                        <Icon
+                            source="music-clef-treble"
+                            size={26}
+                            color="#C77DFF"
+                        />
+                    </View>
+                    <Text style={styles.featureTitle}>Tuner</Text>
+                    <Text style={styles.featureSubtitle}>Guitar</Text>
+                </TouchableOpacity>
 
-        </View>
+                <TouchableOpacity
+                    style={styles.featureCard}
+                    activeOpacity={0.9}
+                    onPress={() => navigation.navigate("Information")}
+                >
+                    <View style={styles.featureIconWrap}>
+                        <Icon
+                            source="information-outline"
+                            size={26}
+                            color="#C77DFF"
+                        />
+                    </View>
+                    <Text style={styles.featureTitle}>About</Text>
+                    <Text style={styles.featureSubtitle}>SmartTab</Text>
+                </TouchableOpacity>
+            </View>
 
-        <FlowLine />
-        <FlowNode icon="guitar-acoustic" label="Play Guitar" />
-        <FlowLine />
-
-        {/* Additional Features Row */}
-        <View style={styles.featuresRow}>
-            <TouchableOpacity
-                style={styles.featureButton}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate("Tuner")}
-            >
+            {/* Quick Stats / Tip Card */}
+            <View style={styles.tipCard}>
                 <Icon
-                    source="music-clef-treble"
-                    size={28}
-                    color="rgba(255,255,255,0.95)"
+                    source="lightbulb-outline"
+                    size={20}
+                    color="#FFD700"
                 />
-                <Text style={styles.featureText}>Guitar Tuner</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-                style={styles.featureButton}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate("Songwriting")}
-            >
-                <Icon
-                    source="pencil-plus"
-                    size={28}
-                    color="rgba(255,255,255,0.95)"
-                />
-                <Text style={styles.featureText}>Create Song</Text>
-            </TouchableOpacity>
-        </View>
-
+                <Text style={styles.tipText}>
+                    Tip: Play slowly at first, then increase speed as you improve
+                </Text>
+            </View>
         </View>
     );
 }
 
-const FlowNode = ({ icon, label }: { icon: string; label: string }) => (
-    <View style={styles.node}>
-        <View style={styles.circle}>
-            <Icon source={icon} size={30} color={colors.text.primary} />
-        </View>
-        <Text style={styles.nodeText}>
-        {label}
-        </Text>
-    </View>
-);
-
-const FlowLine = () => (
-    <View style={styles.line} />
-);
-
-
-/* STYLES */
 const styles = StyleSheet.create({
-
     container: {
-        alignItems: "center",
-        paddingBottom: 28,
+        paddingHorizontal: 24,
+        paddingBottom: 16,
     },
 
-    /* CTA */
-
-    ctaWrapper: {
-        width: CTA_SIZE,
-        height: CTA_SIZE,
-        marginBottom: 18,
-        justifyContent: "center",
-        alignItems: "center",
-        position: "relative",
-    },
-
-    ctaButton: {
-        width: CTA_SIZE,
-        height: CTA_SIZE,
-        borderRadius: CTA_SIZE / 2,
-
-        backgroundColor: "#250036",
-
-        borderWidth: 2,
-        borderColor: "rgba(199,125,255,0.55)",
-
+    /* Main CTA Card */
+    mainCard: {
+        marginBottom: 20,
+        borderRadius: 20,
+        overflow: "hidden",
         shadowColor: "#C77DFF",
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: 18,
-
-        elevation: 12,
-
-        justifyContent: "center",
-        alignItems: "center",
-    },
-
-    ctaText: {
-        marginTop: 6,
-        color: "rgba(255,255,255,0.92)",
-
-        fontSize: 16,
-        fontWeight: "700",
-        letterSpacing: 0.6,
-        lineHeight: 18,
-    },
-
-    /* Utility Buttons */
-
-    utilityBtn: {
-        position: "absolute",
-
-        width: MINI_SIZE,
-        height: MINI_SIZE,
-        borderRadius: MINI_SIZE / 2,
-
-        backgroundColor: "rgba(36,0,56,0.65)",
-
-        borderWidth: 1.5,
-        borderColor: "rgba(199,125,255,0.45)",
-
-        shadowColor: "#C77DFF",
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.35,
-        shadowRadius: 10,
-
-        elevation: 7,
-
-        justifyContent: "center",
-        alignItems: "center",
-
-        right: -(MINI_SIZE / 2 + GAP),
-        top: "50%",
-        transform: [{ translateY: -(MINI_SIZE / 2) + MINI_OFFSET_Y }],
-    },
-
-    infoBtn: {
-        left: -(MINI_SIZE / 2 + GAP),
-        right: undefined,
-    },
-
-    /* FLOW */
-
-    node: {
-        alignItems: "center",
-    },
-
-    circle: {
-        width: 72,
-        height: 72,
-        borderRadius: 36,
-
-        backgroundColor: colors.flow.circleBg,
-        borderWidth: 1,
-        borderColor: colors.flow.circleBorder,
-
-        justifyContent: "center",
-        alignItems: "center",
-    },
-
-    nodeText: {
-        marginTop: 10,
-        marginBottom: 14,
-
-        fontSize: 15,
-        color: colors.text.primary,
-
-        opacity: 0.9,
-        letterSpacing: 0.2,
-    },
-
-    line: {
-        width: 1.6,
-        height: 26,
-        backgroundColor: colors.flow.line,
-    },
-
-    /* FEATURES ROW */
-    featuresRow: {
-        flexDirection: 'row',
-        gap: 24,
-        marginTop: 8,
-    },
-
-    featureButton: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-
-        backgroundColor: '#250036',
-
-        borderWidth: 2,
-        borderColor: 'rgba(199,125,255,0.45)',
-
-        shadowColor: '#C77DFF',
-        shadowOffset: { width: 0, height: 0 },
+        shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.4,
-        shadowRadius: 14,
-
-        elevation: 8,
-
-        justifyContent: 'center',
-        alignItems: 'center',
+        shadowRadius: 16,
+        elevation: 12,
     },
 
-    featureText: {
-        marginTop: 6,
-        color: 'rgba(255,255,255,0.90)',
-        fontSize: 12,
-        fontWeight: '600',
-        letterSpacing: 0.4,
-        textAlign: 'center',
+    mainCardGradient: {
+        paddingVertical: 24,
+        paddingHorizontal: 20,
+    },
+
+    mainCardContent: {
+        flexDirection: "row",
+        alignItems: "center",
+    },
+
+    mainCardText: {
+        flex: 1,
+        marginLeft: 16,
+    },
+
+    mainCardTitle: {
+        fontSize: 24,
+        fontWeight: "800",
+        color: "#fff",
+        letterSpacing: 0.5,
+    },
+
+    mainCardSubtitle: {
+        fontSize: 13,
+        color: "rgba(255,255,255,0.85)",
+        marginTop: 4,
+    },
+
+    /* Feature Cards Row */
+    featureRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        marginBottom: 20,
+    },
+
+    featureCard: {
+        width: (CARD_WIDTH - 24) / 3,
+        backgroundColor: "rgba(36,0,56,0.8)",
+        borderRadius: 16,
+        paddingVertical: 20,
+        paddingHorizontal: 8,
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: "rgba(199,125,255,0.25)",
+    },
+
+    featureIconWrap: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: "rgba(199,125,255,0.15)",
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 10,
+    },
+
+    featureTitle: {
+        fontSize: 14,
+        fontWeight: "700",
+        color: "#fff",
+    },
+
+    featureSubtitle: {
+        fontSize: 11,
+        color: "rgba(255,255,255,0.6)",
+        marginTop: 2,
+    },
+
+    /* Tip Card */
+    tipCard: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "rgba(255,215,0,0.08)",
+        borderRadius: 12,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderWidth: 1,
+        borderColor: "rgba(255,215,0,0.2)",
+    },
+
+    tipText: {
+        flex: 1,
+        marginLeft: 12,
+        fontSize: 13,
+        color: "rgba(255,255,255,0.8)",
+        lineHeight: 18,
     },
 });

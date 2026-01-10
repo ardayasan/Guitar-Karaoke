@@ -14,7 +14,6 @@ export type RootStackParamList = {
   LandscapePractice: {
     tab: PracticeTab;
   };
-  Settings: undefined;
   Information: undefined;
   DetectionTest: undefined;
   Tuner: undefined;

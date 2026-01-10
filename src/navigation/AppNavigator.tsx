@@ -8,7 +8,6 @@ import HomeScreen from '@/screens/home/HomeScreen';
 import LibraryScreen from '@/screens/library/LibraryScreen';
 import PracticeScreen from '@/screens/practice/PracticeScreen';
 import LandscapePracticeScreen from '@/screens/practice/LandscapePracticeScreen';
-import SettingsScreen from '@/screens/settings/SettingsScreen';
 import InformationScreen from '@/screens/information/InformationScreen';
 import DetectionTestScreen from '@/screens/detection-test/DetectionTestScreen';
 import TunerScreen from '@/screens/tuner/TunerScreen';
@@ -73,15 +72,6 @@ export default function AppNavigator() {
             headerLeft: () => null,
             gestureEnabled: false,
             headerShown: false,
-          }}
-        />
-
-        <Stack.Screen
-          name="Settings"
-          component={SettingsScreen}
-          options={{
-            title: 'Settings',
-            headerBackTitle: "Home",
           }}
         />
 
