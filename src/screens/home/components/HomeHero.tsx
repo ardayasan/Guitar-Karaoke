@@ -17,7 +17,7 @@ const HomeHero = () => {
             style={styles.hero}
         >
             <View style={styles.inner}>
-                <Text style={styles.title}>SmartTab</Text>
+                <Text style={styles.title}>GuitarKaraoke</Text>
 
                 <Text style={styles.subtitle}>
                     Your AI Guitar Practice Assistant

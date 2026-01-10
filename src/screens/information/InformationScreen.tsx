@@ -21,7 +21,7 @@ export default function InformationScreen() {
                 ]}
                 style={styles.hero}
             >
-                <Text style={styles.heroTitle}>SmartTab</Text>
+                <Text style={styles.heroTitle}>GuitarKaraoke</Text>
                 <Text style={styles.heroSubtitle}>
                     Your AI Guitar Practice Assistant
                 </Text>
@@ -34,10 +34,10 @@ export default function InformationScreen() {
                         <View style={styles.iconWrap}>
                             <Icon source="information-outline" size={24} color="#C77DFF" />
                         </View>
-                        <Text style={styles.cardTitle}>What is SmartTab?</Text>
+                        <Text style={styles.cardTitle}>What is GuitarKaraoke?</Text>
                     </View>
                     <Text style={styles.cardText}>
-                        SmartTab is a practice assistant designed for guitar players who want
+                        GuitarKaraoke is a practice assistant designed for guitar players who want
                         real-time feedback while playing. It listens to your live performance
                         and checks whether you hit the correct notes.
                     </Text>

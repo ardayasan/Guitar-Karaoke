@@ -98,7 +98,7 @@ export default function HomeDescriptions() {
                         />
                     </View>
                     <Text style={styles.featureTitle}>About</Text>
-                    <Text style={styles.featureSubtitle}>SmartTab</Text>
+                    <Text style={styles.featureSubtitle}>GuitarKaraoke</Text>
                 </TouchableOpacity>
             </View>
 

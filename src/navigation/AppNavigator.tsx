@@ -39,7 +39,7 @@ export default function AppNavigator() {
           name="Home"
           component={HomeScreen}
           options={{
-            title: 'SmartTab',
+            title: 'GuitarKaraoke',
             headerShown: false,
           }}
         />
@@ -79,7 +79,7 @@ export default function AppNavigator() {
           name="Information"
           component={InformationScreen}
           options={{
-            title: 'About SmartTab',
+            title: 'About GuitarKaraoke',
             headerBackTitle: "Home"
           }}
         />
