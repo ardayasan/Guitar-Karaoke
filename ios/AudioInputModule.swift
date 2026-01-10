@@ -42,8 +42,8 @@ final class AudioInputModule: RCTEventEmitter {
     }
   }
 
-  @objc(start)
-  func start() {
+  @objc(start:)
+  func start(_ options: NSDictionary) {
     if isRunning { return }
 
     try? session.setCategory(
@@ -60,6 +60,12 @@ final class AudioInputModule: RCTEventEmitter {
     noteCounter = 0
     chordCounter = 0
     ringBuffer.reset()
+
+    if let mode = options["mode"] as? String {
+        pipeline.setMode(mode)
+    } else {
+        pipeline.setMode("standard")
+    }
 
     pipeline.start()
 

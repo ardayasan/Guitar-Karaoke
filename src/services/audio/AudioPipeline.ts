@@ -10,7 +10,7 @@ export class AudioPipeline {
   private listeners: any[] = [];
   private running = false;
 
-  start(callback: AudioPipelineCallback) {
+  start(callback: AudioPipelineCallback, mode: 'karaoke' | 'tuner' = 'karaoke') {
     if (this.running) return;
 
     this.running = true;
@@ -25,7 +25,7 @@ export class AudioPipeline {
       })
     );
 
-    AudioInputModule.start();
+    AudioInputModule.start({ mode });
   }
 
   stop() {

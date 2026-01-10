@@ -97,7 +97,7 @@ export default function AppNavigator() {
           name="Tuner"
           component={TunerScreen}
           options={{
-            title: "Guitar Tuner",
+            title: "Tuner",
             headerBackTitle: "Home",
           }}
         />

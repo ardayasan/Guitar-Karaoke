@@ -1,338 +1,379 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
-import { Text } from 'react-native-paper';
+import { Text, Icon } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '@/theme/colors';
 import { AudioPipeline } from '@/services/audio/AudioPipeline';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
+const BAR_WIDTH = width - 40;
+const BAR_CENTER = BAR_WIDTH / 2;
 
-// Standard guitar tuning (E2, A2, D3, G3, B3, E4)
-const GUITAR_STRINGS = [
-  { name: 'E', octave: 2, frequency: 82.41, string: 6 },
-  { name: 'A', octave: 2, frequency: 110.00, string: 5 },
-  { name: 'D', octave: 3, frequency: 146.83, string: 4 },
-  { name: 'G', octave: 3, frequency: 196.00, string: 3 },
-  { name: 'B', octave: 3, frequency: 246.94, string: 2 },
-  { name: 'E', octave: 4, frequency: 329.63, string: 1 },
+/**
+ * Guitar strings (6 → 1)
+ */
+const STRINGS = [
+  { string: 6, name: 'E', octave: 2, freq: 82.41 },
+  { string: 5, name: 'A', octave: 2, freq: 110.0 },
+  { string: 4, name: 'D', octave: 3, freq: 146.83 },
+  { string: 3, name: 'G', octave: 3, freq: 196.0 },
+  { string: 2, name: 'B', octave: 3, freq: 246.94 },
+  { string: 1, name: 'E', octave: 4, freq: 329.63 },
 ];
 
 export default function TunerScreen() {
-  const [isListening, setIsListening] = useState(false);
-  const [detectedNote, setDetectedNote] = useState<{ name: string; octave: number; frequency?: number } | null>(null);
-  const [tuningStatus, setTuningStatus] = useState<'low' | 'perfect' | 'high' | null>(null);
-  const [cents, setCents] = useState(0);
-
   const pipelineRef = useRef<AudioPipeline | null>(null);
+
+  const lastFreqRef = useRef<number | null>(null);
+
+  // Silence reset refs
+  const lastDetectionTimeRef = useRef<number>(0);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [isListening, setIsListening] = useState(false);
+  const [note, setNote] = useState<{ name: string; octave: number } | null>(null);
+  const [cents, setCents] = useState(0);
+  const [target, setTarget] = useState<(typeof STRINGS)[0] | null>(null);
+  const [selectedString, setSelectedString] = useState<(typeof STRINGS)[0] | null>(null);
 
   useEffect(() => {
     pipelineRef.current = new AudioPipeline();
-
     return () => {
+      // cleanup timers + pipeline
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
       pipelineRef.current?.stop();
       pipelineRef.current = null;
     };
   }, []);
 
-  const handleDetection = useCallback((detection: any) => {
-    if (!detection || !detection.note) {
-      setDetectedNote(null);
-      setTuningStatus(null);
-      setCents(0);
-      return;
-    }
-
-    const { name, octave, frequency } = detection.note;
-    setDetectedNote({ name, octave, frequency });
-
-    const targetNote = GUITAR_STRINGS.find(
-      (s) => s.name === name && s.octave === octave
-    );
-
-    if (targetNote && frequency) {
-      const centsOff = 1200 * Math.log2(frequency / targetNote.frequency);
-      setCents(Math.round(centsOff));
-
-      if (Math.abs(centsOff) <= 5) {
-        setTuningStatus('perfect');
-      } else if (centsOff < 0) {
-        setTuningStatus('low');
-      } else {
-        setTuningStatus('high');
-      }
-    } else {
-      setTuningStatus(null);
-      setCents(0);
-    }
+  const resetToIdle = useCallback(() => {
+    setCents(0);
+    setTarget(null);
+    setNote(null);
+    lastFreqRef.current = null;
   }, []);
 
-  const handleStartListening = () => {
-    if (!pipelineRef.current) return;
-    pipelineRef.current.start(handleDetection);
+  const handleDetection = useCallback(
+    (d: any) => {
+      // If pipeline emits null/partial data, don't thrash UI; silence timer will handle reset.
+      if (!d?.frequency) return;
+
+      // mark last detection time
+      lastDetectionTimeRef.current = Date.now();
+
+      // clear any pending silence reset
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+
+      const raw = d.frequency;
+
+      // smoothing
+      const ALPHA = 0.15;
+      const smooth =
+        lastFreqRef.current == null ? raw : lastFreqRef.current * (1 - ALPHA) + raw * ALPHA;
+      lastFreqRef.current = smooth;
+
+      // target selection
+      const targetString = selectedString
+        ? selectedString
+        : STRINGS.reduce((p, c) =>
+            Math.abs(c.freq - smooth) < Math.abs(p.freq - smooth) ? c : p
+          );
+
+      setTarget(targetString);
+      setNote({ name: targetString.name, octave: targetString.octave });
+
+      // cents relative to target ONLY
+      let c = 1200 * Math.log2(smooth / targetString.freq);
+      if (Math.abs(c) <= 3) c = 0;
+
+      setCents(Math.max(-50, Math.min(50, Math.round(c))));
+
+      // schedule silence reset (GuitarTuna-like)
+      silenceTimerRef.current = setTimeout(() => {
+        const elapsed = Date.now() - lastDetectionTimeRef.current;
+        if (elapsed >= 400) {
+          resetToIdle();
+        }
+      }, 400);
+    },
+    [selectedString, resetToIdle]
+  );
+
+  const start = () => {
+    if (!pipelineRef.current || pipelineRef.current.isRunning()) return;
+    pipelineRef.current.start(handleDetection, 'tuner');
     setIsListening(true);
+
+    // start in idle center state
+    lastDetectionTimeRef.current = Date.now();
   };
 
-  const handleStopListening = () => {
+  const stop = () => {
     pipelineRef.current?.stop();
     setIsListening(false);
-    setDetectedNote(null);
-    setTuningStatus(null);
-    setCents(0);
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    lastDetectionTimeRef.current = 0;
+
+    resetToIdle();
   };
 
-  const getTuningColor = () => {
-    if (!tuningStatus) return colors.text.subtle;
-    if (tuningStatus === 'perfect') return colors.feedback.correct;
-    return colors.feedback.incorrect;
-  };
+  // Marker position: always centered when idle/perfect
+  const markerX =
+    cents === 0 ? BAR_CENTER : Math.max(0, Math.min(BAR_WIDTH, ((cents + 50) / 100) * BAR_WIDTH));
 
-  const getTuningText = () => {
-    if (!tuningStatus) return 'Play a string';
-    if (tuningStatus === 'perfect') return '✓ In Tune';
-    if (tuningStatus === 'low') return '↓ Too Low';
-    return '↑ Too High';
-  };
+  const abs = Math.abs(cents);
+  const isPerfect = abs <= 3;
+
+  let statusText = 'IN TUNE';
+  let statusColor = colors.feedback.correct;
+
+  if (!note) {
+    statusText = isListening ? 'PLAY A STRING' : 'TAP TO START';
+    statusColor = colors.text.subtle;
+  } else if (!isPerfect) {
+    statusText = cents < 0 ? 'LOW' : 'HIGH';
+    statusColor = abs < 15 ? '#FFCC00' : colors.feedback.incorrect;
+  }
+
+  // Discrete steps for marker label (NOT cents)
+  const step = abs <= 3 ? 0 : abs <= 10 ? 1 : abs <= 25 ? 2 : 3;
+  const stepText = step === 0 ? '' : cents < 0 ? `-${step}` : `+${step}`;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.content}>
-        {/* Detection Card */}
-        <View style={styles.detectionCard}>
-          {detectedNote ? (
-            <>
-              <Text style={[styles.detectedNote, { color: getTuningColor() }]}>
-                {detectedNote.name}{detectedNote.octave}
-              </Text>
-              {detectedNote.frequency && (
-                <Text style={styles.frequency}>
-                  {detectedNote.frequency.toFixed(2)} Hz
-                </Text>
-              )}
-              <Text style={[styles.tuningStatus, { color: getTuningColor() }]}>
-                {getTuningText()}
-              </Text>
-              {cents !== 0 && (
-                <Text style={styles.cents}>
-                  {cents > 0 ? '+' : ''}{cents} cents
-                </Text>
-              )}
-            </>
-          ) : (
-            <Text style={styles.waitingText}>
-              {isListening ? 'Listening...' : 'Press Start to tune'}
-            </Text>
-          )}
-        </View>
+    <LinearGradient
+      colors={[colors.bg.heroTop, colors.bg.heroMid, colors.bg.heroBottom]}
+      style={styles.container}
+    >
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.content}>
+          {/* NOTE */}
+          <View style={styles.noteBox}>
+            <Text style={styles.noteText}>{note ? note.name : '--'}</Text>
+            <Text style={styles.octaveText}>{note ? note.octave : ''}</Text>
+          </View>
 
-        {/* Tuning indicator */}
-        {tuningStatus && (
-          <View style={styles.indicatorContainer}>
-            <View style={styles.indicatorBar}>
-              <View style={styles.indicatorCenter} />
-              <View
-                style={[
-                  styles.indicatorMarker,
-                  {
-                    left: `${Math.max(0, Math.min(100, 50 + cents))}%`,
-                    backgroundColor: getTuningColor(),
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.indicatorLabels}>
-              <Text style={styles.indicatorLabel}>Low</Text>
-              <Text style={styles.indicatorLabel}>Perfect</Text>
-              <Text style={styles.indicatorLabel}>High</Text>
+          {/* BAR */}
+          <View style={styles.tunerBar}>
+            <View style={styles.centerLine} />
+
+            <View
+              style={[
+                styles.marker,
+                {
+                  left: markerX,
+                  backgroundColor: isPerfect ? colors.feedback.correct : '#fff',
+                  borderColor: isPerfect ? '#fff' : 'rgba(255,255,255,0.8)',
+                },
+              ]}
+            >
+              {stepText !== '' && <Text style={styles.markerValue}>{stepText}</Text>}
             </View>
           </View>
-        )}
 
-        {/* String Reference Cards */}
-        <View style={styles.stringsGrid}>
-          {GUITAR_STRINGS.map((string) => (
-            <View key={string.string} style={styles.stringCard}>
-              <Text style={styles.stringNumber}>{string.string}</Text>
-              <Text style={styles.stringNote}>{string.name}{string.octave}</Text>
-              <Text style={styles.stringFreq}>{string.frequency.toFixed(0)}Hz</Text>
-            </View>
-          ))}
+          {/* STATUS */}
+          <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
+
+          {/* STRING SELECTOR (bigger + not stuck at bottom) */}
+          <View style={styles.stringSelector}>
+            <TouchableOpacity
+              style={[styles.autoButton, selectedString === null && styles.autoActive]}
+              onPress={() => setSelectedString(null)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.autoText}>AUTO</Text>
+            </TouchableOpacity>
+
+            {STRINGS.map((s) => {
+              const active = selectedString === s;
+              return (
+                <TouchableOpacity
+                  key={s.string}
+                  style={styles.stringItem}
+                  onPress={() => setSelectedString(active ? null : s)}
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.stringLine, active && styles.stringLineActive]} />
+                  <Text style={[styles.stringNumber, active && styles.stringNumberActive]}>
+                    {s.string}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* CONTROL */}
+          <View style={styles.controls}>
+            <TouchableOpacity
+              style={[
+                styles.circleButton,
+                {
+                  backgroundColor: isListening ? colors.feedback.incorrect : colors.brand.primary,
+                  shadowColor: isListening ? colors.feedback.incorrect : colors.brand.primary,
+                },
+              ]}
+              onPress={isListening ? stop : start}
+              activeOpacity={0.85}
+            >
+              <Icon source={isListening ? 'stop' : 'microphone'} size={40} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
-
-        {/* Controls */}
-        <TouchableOpacity
-          style={[
-            styles.mainButton,
-            isListening && styles.mainButtonStop
-          ]}
-          activeOpacity={0.9}
-          onPress={isListening ? handleStopListening : handleStartListening}
-        >
-          <LinearGradient
-            colors={isListening
-              ? ['#ff5c5c', '#ff3333']
-              : ['#7A3CFF', '#C77DFF']
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.mainButtonGradient}
-          >
-            <Text style={styles.mainButtonText}>
-              {isListening ? 'Stop' : 'Start Tuning'}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
+/* ───────── styles ───────── */
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg.main,
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+  content: { flex: 1, padding: 20 },
 
-  /* Detection Card */
-  detectionCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-    backgroundColor: 'rgba(36,0,56,0.8)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(199,125,255,0.3)',
-    marginBottom: 20,
-    minHeight: 180,
-    shadowColor: '#C77DFF',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-  },
-  detectedNote: {
-    fontSize: 64,
+  noteBox: { alignItems: 'center', marginTop: 40 },
+  noteText: {
+    fontSize: 120,
     fontWeight: '800',
-    marginBottom: 4,
+    color: '#fff',
+    textShadowColor: colors.brand.primary,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
+    elevation: 10,
   },
-  frequency: {
-    fontSize: 16,
-    color: colors.text.subtle,
-    marginBottom: 12,
-  },
-  tuningStatus: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  cents: {
-    fontSize: 14,
-    color: colors.text.subtle,
-  },
-  waitingText: {
-    fontSize: 18,
-    color: colors.text.subtle,
-    textAlign: 'center',
+  octaveText: {
+    fontSize: 32,
+    color: colors.text.secondary,
+    marginTop: -16,
+    fontWeight: '600',
+    opacity: 0.85,
   },
 
-  /* Indicator */
-  indicatorContainer: {
-    marginBottom: 24,
-    paddingHorizontal: 8,
-  },
-  indicatorBar: {
+  tunerBar: {
+    width: BAR_WIDTH,
     height: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.22)',
     borderRadius: 4,
-    marginBottom: 8,
+    alignSelf: 'center',
+    marginVertical: 28,
     position: 'relative',
   },
-  indicatorCenter: {
+  centerLine: {
     position: 'absolute',
-    left: '50%',
+    left: BAR_CENTER - 1,
     width: 2,
     height: 16,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.85)',
     top: -4,
-    marginLeft: -1,
+    borderRadius: 1,
   },
-  indicatorMarker: {
+  marker: {
     position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    top: -6,
-    marginLeft: -10,
+    top: -16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginLeft: -16,
     borderWidth: 2,
-    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#fff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    elevation: 12,
   },
-  indicatorLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  indicatorLabel: {
-    fontSize: 11,
-    color: colors.text.subtle,
+  markerValue: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: colors.bg.main,
+    letterSpacing: 0.3,
   },
 
-  /* String Grid */
-  stringsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  stringCard: {
-    width: (SCREEN_WIDTH - 60) / 3,
-    backgroundColor: 'rgba(36,0,56,0.6)',
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
+  statusText: {
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '800',
     marginBottom: 10,
+    letterSpacing: 1,
+  },
+
+  // Selector placed above button and made bigger
+  stringSelector: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    gap: 18,
+    marginTop: 6,
+    marginBottom: 18,
+  },
+  autoButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.16)',
     borderWidth: 1,
-    borderColor: 'rgba(199,125,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  autoActive: {
+    backgroundColor: colors.brand.primary,
+    borderColor: 'rgba(255,255,255,0.55)',
+  },
+  autoText: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 14,
+    letterSpacing: 1,
+  },
+  stringItem: {
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  stringLine: {
+    width: 7,
+    height: 52,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 4,
+  },
+  stringLineActive: {
+    height: 66,
+    backgroundColor: colors.brand.primary,
+    shadowColor: colors.brand.primary,
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 10,
   },
   stringNumber: {
-    fontSize: 12,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.55)',
     fontWeight: '700',
-    color: '#C77DFF',
-    marginBottom: 4,
   },
-  stringNote: {
-    fontSize: 20,
-    fontWeight: '700',
+  stringNumberActive: {
     color: '#fff',
-  },
-  stringFreq: {
-    fontSize: 11,
-    color: colors.text.subtle,
-    marginTop: 2,
+    fontWeight: '900',
   },
 
-  /* Main Button */
-  mainButton: {
-    marginTop: 'auto',
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#C77DFF',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-  },
-  mainButtonStop: {
-    shadowColor: '#ff5c5c',
-  },
-  mainButtonGradient: {
-    paddingVertical: 18,
+  controls: { alignItems: 'center', marginTop: 6 },
+  circleButton: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    justifyContent: 'center',
     alignItems: 'center',
-  },
-  mainButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 0.5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 10,
   },
 });

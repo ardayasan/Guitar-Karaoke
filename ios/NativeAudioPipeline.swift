@@ -2,6 +2,13 @@ import Foundation
 
 final class NativeAudioPipeline {
 
+    enum PipelineMode {
+        case standard
+        case tuner // Note detection only, no chords
+    }
+
+    private var mode: PipelineMode = .standard
+
     // MARK: - Output
     var emitDetection: (([String: Any]?) -> Void)?
 
@@ -108,6 +115,14 @@ final class NativeAudioPipeline {
         cachedChordIntervalKey = nil
         chromaHistory = []
     }
+
+    func setMode(_ modeString: String) {
+        if modeString == "tuner" {
+            mode = .tuner
+        } else {
+            mode = .standard
+        }
+    }
     
     private func resetChordState() {
         chordActive = false
@@ -150,7 +165,10 @@ final class NativeAudioPipeline {
 
         // KEY CHANGE: Only block notes if chord is CONFIRMED active
         // This is the hysteresis: chord must be stable before suppressing notes
-        if chordActive { return }
+        // KEY CHANGE: Only block notes if chord is CONFIRMED active
+        // This is the hysteresis: chord must be stable before suppressing notes
+        // In Tuner mode, we never block notes
+        if mode != .tuner && chordActive { return }
 
         pitchService.setSampleRate(sampleRate)
 
@@ -180,7 +198,9 @@ final class NativeAudioPipeline {
         sampleRate: Double,
         rms: Float
     ) {
-        guard isActive else { return }
+
+        // Tuner mode disables chord detection entirely
+        guard isActive, mode != .tuner else { return }
 
         // RMS gate (lower threshold for soft strums)
         if rms < RMS_CHORD_THRESHOLD { return }
