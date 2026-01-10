@@ -83,7 +83,10 @@ final class NativeAudioPipeline {
 
     // --- Pitch Class Thresholds ---
     private let PITCH_CLASS_ENERGY_THRESHOLD = 0.08
-    private let MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD = 2
+
+    // ✅ Strengthened: triads must have 3 pitch classes
+    private let MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD = 3
+
     private let TEMPLATE_MATCH_THRESHOLD = 0.07
     private let MIN_TEMPLATE_MATCH = 2
 
@@ -420,6 +423,12 @@ final class NativeAudioPipeline {
     private func handleChordResult(_ result: ChordDetectionResult) {
         guard isActive else { return }
 
+        // ✅ HARD GATE: Eğer şu an stabil nota (monofonik) durumdaysak chord'a izin verme.
+        if pitchState == .steady, let f = lastStableFrequency, f > 0 {
+            handleNoChordCandidate(timestamp: result.timestamp)
+            return
+        }
+
         let chroma = result.chroma
         guard chroma.count == 12 else { return }
 
@@ -439,27 +448,33 @@ final class NativeAudioPipeline {
         let instantChroma = chroma
         let avgChroma = averagedChromaInWindow(nowMs: result.timestamp)
 
-        let mono = isMonophonicDominant(chroma: avgChroma)
-        if mono {
-            let suppressed = suppressHarmonicIllusions(chroma: avgChroma)
-            let suppressedActive = countActivePitchClasses(chroma: suppressed, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
-            if suppressedActive < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD {
-                handleNoChordCandidate(timestamp: result.timestamp)
-                return
-            }
-        }
-
-        let activeCount = countActivePitchClasses(chroma: instantChroma, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
-        if activeCount < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD {
+        // ✅ HARD MONO LOCK: monofonik dominans varsa chord'u tamamen kapat.
+        if isMonophonicDominant(chroma: avgChroma) {
             handleNoChordCandidate(timestamp: result.timestamp)
             return
         }
 
+        // ✅ 3 pitch-class şartı (avg chroma üstünden daha güvenilir)
+        let activeAvg = countActivePitchClasses(chroma: avgChroma, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
+        if activeAvg < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD {
+            handleNoChordCandidate(timestamp: result.timestamp)
+            return
+        }
+
+        // (Ek güvenlik) anlık chroma da 3 pc göstermeli
+        let activeInstant = countActivePitchClasses(chroma: instantChroma, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
+        if activeInstant < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD {
+            handleNoChordCandidate(timestamp: result.timestamp)
+            return
+        }
+
+        // Skeleton gate
         if !passesIntervalSkeletonGate(chroma: instantChroma, root: cand.root, quality: cand.quality) {
             handleNoChordCandidate(timestamp: result.timestamp)
             return
         }
 
+        // Template pitch-class match (root/third/fifth)
         let requiredPCs = chordPitchClasses(root: cand.root, quality: cand.quality)
         var matchCount = 0
         for pc in requiredPCs {
