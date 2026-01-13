@@ -120,18 +120,6 @@ export default function HomeDescriptions() {
                     color="rgba(255,255,255,0.4)"
                 />
             </TouchableOpacity>
-
-            {/* Quick Stats / Tip Card */}
-            <View style={styles.tipCard}>
-                <Icon
-                    source="lightbulb-outline"
-                    size={20}
-                    color="#FFD700"
-                />
-                <Text style={styles.tipText}>
-                    Tip: Play slowly at first, then increase speed as you improve
-                </Text>
-            </View>
         </View>
     );
 }
