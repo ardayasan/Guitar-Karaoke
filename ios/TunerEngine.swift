@@ -53,9 +53,9 @@ final class TunerEngine {
     private let LOW_FREQ_CUTOFF = 150.0            // E2=82, A2=110, D3=147
     
     // Lock mechanism - stricter for bass
-    private let LOCK_THRESHOLD_CENTS = 2.0
-    private let LOCK_THRESHOLD_CENTS_BASS = 4.0   // Wider dead zone for bass
-    private let LOCK_FRAMES_REQUIRED = 2
+    private let LOCK_THRESHOLD_CENTS = 3.0       // Increased from 2.0 for stability
+    private let LOCK_THRESHOLD_CENTS_BASS = 6.0  // Increased from 4.0 - wider dead zone for bass
+    private let LOCK_FRAMES_REQUIRED = 3          // Increased from 2 - require more frames to lock
     private let UNLOCK_FRAMES_REQUIRED = 2
     private let UNLOCK_FRAMES_REQUIRED_BASS = 4   // Harder to unlock for bass
     
@@ -166,8 +166,8 @@ final class TunerEngine {
             freqBuffer.removeFirst()
         }
         
-        // Need minimum samples
-        let minSamples = isBassNote ? 3 : 2
+        // Need minimum samples - more for bass stability
+        let minSamples = isBassNote ? 4 : 2
         guard freqBuffer.count >= minSamples else { return }
         
         // ----------------------------------------

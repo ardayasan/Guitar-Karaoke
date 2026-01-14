@@ -23,7 +23,7 @@ export default function InformationScreen() {
             >
                 <Text style={styles.heroTitle}>GuitarKaraoke</Text>
                 <Text style={styles.heroSubtitle}>
-                    Your AI Guitar Practice Assistant
+                    Your Guitar Practice Assistant
                 </Text>
             </LinearGradient>
 

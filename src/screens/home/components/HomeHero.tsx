@@ -20,7 +20,7 @@ const HomeHero = () => {
                 <Text style={styles.title}>GuitarKaraoke</Text>
 
                 <Text style={styles.subtitle}>
-                    Your AI Guitar Practice Assistant
+                    Your Guitar Practice Assistant
                 </Text>
             </View>
         </LinearGradient>

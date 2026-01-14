@@ -33,8 +33,8 @@ final class NativeAudioPipeline {
     private var pitchState: PitchState = .idle
 
     // Timing
-    private let ONSET_MIN_DURATION_MS = 40      // transient'i atla (pratikte daha güvenli)
-    private let STEADY_CONFIRM_FRAMES = 2       // üst üste kaç iyi frame ile steady'e geçilir
+    private let ONSET_MIN_DURATION_MS = 25      // Reduced from 40 for faster response
+    private let STEADY_CONFIRM_FRAMES = 1      // Reduced from 2 for faster detection
 
     private var onsetStartMs: Int = 0
     private var steadyCandidateCount = 0
@@ -268,13 +268,30 @@ final class NativeAudioPipeline {
             
             // ----------------------------------------
             // Apply octave resolution using ZC
-            // SKIP for bass frequencies - ZC is unreliable for low notes
-            // and causes oscillation between octaves
+            // For bass frequencies, use guitar string fundamentals as reference
             // ----------------------------------------
             let isBassNote = freq < 150.0  // E2=82, A2=110, D3=147
             
-            if !isBassNote, let zcFreq = ZeroCrossing.estimateFrequency(samples: samples, sampleRate: sampleRate), zcFreq > 0 {
-                // Check if YIN is an octave off from ZC
+            if isBassNote {
+                // Known bass string fundamentals
+                let bassStrings: [Double] = [82.41, 110.0, 146.83] // E2, A2, D3
+                
+                // Check if detected freq is suspiciously close to 2x a bass fundamental
+                // This would indicate YIN detected the 2nd harmonic instead of fundamental
+                for fundamental in bassStrings {
+                    let ratio = freq / fundamental
+                    // If detected is ~2x the fundamental (octave too high)
+                    if ratio > 1.8 && ratio < 2.2 {
+                        freq = fundamental
+                        break
+                    }
+                    // If detected is close to fundamental, we're good
+                    if ratio > 0.9 && ratio < 1.1 {
+                        break
+                    }
+                }
+            } else if let zcFreq = ZeroCrossing.estimateFrequency(samples: samples, sampleRate: sampleRate), zcFreq > 0 {
+                // For non-bass notes, use ZC for octave correction
                 let ratio = freq / zcFreq
                 
                 // If YIN is ~2x ZC, YIN might be an octave too high
@@ -484,14 +501,24 @@ final class NativeAudioPipeline {
     private func handleChordResult(_ result: ChordDetectionResult) {
         guard isActive else { return }
 
-        // ✅ HARD GATE: Eğer şu an stabil nota (monofonik) durumdaysak chord'a izin verme.
-        if pitchState == .steady, let f = lastStableFrequency, f > 0 {
-            handleNoChordCandidate(timestamp: result.timestamp)
-            return
-        }
-
+        // Check chroma FIRST to detect polyphonic content
         let chroma = result.chroma
         guard chroma.count == 12 else { return }
+        
+        let activePitchClasses = countActivePitchClasses(chroma: chroma, threshold: PITCH_CLASS_ENERGY_THRESHOLD)
+        
+        // ✅ SMART GATE: Only block chord if BOTH pitch is steady AND chroma is monophonic
+        // This allows note-to-chord transitions when strumming over a sustained note
+        if pitchState == .steady, let f = lastStableFrequency, f > 0 {
+            // If chroma shows 3+ pitch classes, it's likely a chord - allow it
+            if activePitchClasses < MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD {
+                handleNoChordCandidate(timestamp: result.timestamp)
+                return
+            }
+            // Polyphonic detected - reset pitch state to allow chord detection
+            pitchState = .onset
+            onsetStartMs = result.timestamp
+        }
 
         pushChromaFrame(timestampMs: result.timestamp, chroma: chroma)
 
@@ -563,6 +590,10 @@ final class NativeAudioPipeline {
         timestamp: Int
     ) {
         chordExitCounter = 0
+        
+        // Immediately suppress pitch detection when valid chord is detected
+        chordActive = true
+        pitchState = .idle
 
         if confidence >= CHORD_CONFIDENCE_STRONG {
             activateChord(root: root, quality: quality, confidence: confidence, timestamp: timestamp)

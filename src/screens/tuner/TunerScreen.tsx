@@ -69,7 +69,7 @@ export default function TunerScreen() {
     // Handle silence / null
     if (!d || d.isSilent) {
       setIsSilent(true);
-      setNote(null);
+      // DON'T clear the note - keep showing the last detected note to prevent flicker
       setCents(0);
       setStatus('SILENT');
       animateNeedle(0);

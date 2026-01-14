@@ -15,6 +15,7 @@ import {
     StatusBar,
     TouchableOpacity,
     Animated,
+    Modal,
 } from "react-native";
 import { Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -169,7 +170,6 @@ export default function LandscapePracticeScreen() {
     const pausedTimeRef = useRef<number>(0);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    /* ---------- Store ---------- */
     const {
         currentStepIndex,
         hydratedSteps,
@@ -187,10 +187,12 @@ export default function LandscapePracticeScreen() {
         // setCurrentStepByTime, // TODO: Implement time-based step advancement
         setStepResult,
         resetPractice,
+        completePractice,
     } = usePracticeStore();
 
     const [isListening, setIsListening] = useState(false);
     const [elapsedMs, setElapsedMs] = useState(0);
+    const [isCompleted, setIsCompleted] = useState(false);
 
     const evaluatedStepsRef = useRef<Set<number>>(new Set());
     const translateX = useRef(new Animated.Value(0)).current;
@@ -212,6 +214,20 @@ export default function LandscapePracticeScreen() {
             resetPractice();
         };
     }, [tab, startPractice, resetPractice]);
+
+    /* ================================================= */
+    /* COMPLETION DETECTION                              */
+    /* ================================================= */
+    useEffect(() => {
+        // Check if practice is completed (all steps evaluated)
+        if (isListening && hydratedSteps.length > 0 && currentStepIndex >= hydratedSteps.length) {
+            // All steps done!
+            pipelineRef.current?.stop();
+            setIsListening(false);
+            completePractice();
+            setIsCompleted(true);
+        }
+    }, [currentStepIndex, hydratedSteps.length, isListening, completePractice]);
 
     /* ================================================= */
     /* ANIMATE TIMELINE ON STEP CHANGE                  */
@@ -281,13 +297,17 @@ export default function LandscapePracticeScreen() {
         const currentStep = hydratedSteps[currentStepIndex];
 
         if (detection.note) {
-            const note = { name: detection.note.name, octave: detection.note.octave };
+            const note = { name: detection.note.name, octave: Number(detection.note.octave) };
             setDetectedNote(note);
 
             if (currentStep && currentStep.type === 'note' && currentStep.result === 'pending') {
+                // Ensure both name and octave match - use Number() to prevent type mismatch
+                const expectedOctave = Number(currentStep.note.octave);
+                const detectedOctave = Number(note.octave);
+
                 const isCorrect =
                     currentStep.note.name === note.name &&
-                    currentStep.note.octave === note.octave;
+                    expectedOctave === detectedOctave;
 
                 setStepResult(currentStepIndex, isCorrect ? 'correct' : 'incorrect');
                 evaluatedStepsRef.current.add(currentStepIndex);
@@ -299,9 +319,16 @@ export default function LandscapePracticeScreen() {
             setDetectedChord(chord);
 
             if (currentStep && currentStep.type === 'chord' && currentStep.result === 'pending') {
-                const expected = currentStep.chordName;
-                const detected = `${chord.root}${chord.type === 'minor' ? 'm' : ''}`;
-                const isCorrect = expected.toLowerCase() === detected.toLowerCase();
+                const expected = currentStep.chordName.toLowerCase();
+
+                // Build detected chord name: root + type suffix
+                // major = just root (e.g., "D", "G")
+                // minor = root + "m" (e.g., "Em", "Am")
+                const typeLower = (chord.type || '').toLowerCase();
+                const suffix = typeLower === 'minor' ? 'm' : '';
+                const detected = `${chord.root}${suffix}`.toLowerCase();
+
+                const isCorrect = expected === detected;
 
                 setStepResult(currentStepIndex, isCorrect ? 'correct' : 'incorrect');
                 evaluatedStepsRef.current.add(currentStepIndex);
@@ -483,6 +510,66 @@ export default function LandscapePracticeScreen() {
                     </TouchableOpacity>
                 )}
             </View>
+
+            {/* Completion Modal */}
+            <Modal
+                visible={isCompleted}
+                transparent
+                animationType="fade"
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>🎉 Practice Complete!</Text>
+                        <Text style={styles.modalSubtitle}>
+                            Great job practicing "{tab.metadata.title}"
+                        </Text>
+
+                        <View style={styles.modalStats}>
+                            <View style={styles.modalStatRow}>
+                                <Text style={styles.modalStatLabel}>Accuracy</Text>
+                                <Text style={[styles.modalStatValue, { color: colors.brand.primary }]}>
+                                    {stats.accuracy.toFixed(0)}%
+                                </Text>
+                            </View>
+                            <View style={styles.modalStatRow}>
+                                <Text style={styles.modalStatLabel}>Correct</Text>
+                                <Text style={[styles.modalStatValue, { color: colors.feedback.correct }]}>
+                                    {stats.correct}
+                                </Text>
+                            </View>
+                            <View style={styles.modalStatRow}>
+                                <Text style={styles.modalStatLabel}>Incorrect</Text>
+                                <Text style={[styles.modalStatValue, { color: colors.feedback.incorrect }]}>
+                                    {stats.incorrect}
+                                </Text>
+                            </View>
+                            <View style={styles.modalStatRow}>
+                                <Text style={styles.modalStatLabel}>Missed</Text>
+                                <Text style={[styles.modalStatValue, { color: colors.feedback.missed }]}>
+                                    {stats.missed}
+                                </Text>
+                            </View>
+                            <View style={styles.modalStatRow}>
+                                <Text style={styles.modalStatLabel}>Best Streak</Text>
+                                <Text style={styles.modalStatValue}>
+                                    {stats.longestStreak}
+                                </Text>
+                            </View>
+                        </View>
+
+                        <TouchableOpacity
+                            style={styles.modalButton}
+                            onPress={() => {
+                                setIsCompleted(false);
+                                stopPractice();
+                                navigation.goBack();
+                            }}
+                        >
+                            <Text style={styles.modalButtonText}>Done</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -747,6 +834,76 @@ const styles = StyleSheet.create({
 
     controlButtonTextPrimary: {
         fontSize: 14,
+        fontWeight: '700',
+        color: '#fff',
+    },
+
+    // Completion Modal
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+
+    modalContent: {
+        backgroundColor: colors.bg.main,
+        borderRadius: 20,
+        padding: 30,
+        width: '80%',
+        maxWidth: 400,
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: colors.brand.primary,
+    },
+
+    modalTitle: {
+        fontSize: 28,
+        fontWeight: '800',
+        color: '#fff',
+        marginBottom: 8,
+    },
+
+    modalSubtitle: {
+        fontSize: 14,
+        color: colors.text.secondary,
+        marginBottom: 24,
+        textAlign: 'center',
+    },
+
+    modalStats: {
+        width: '100%',
+        marginBottom: 24,
+    },
+
+    modalStatRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingVertical: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.1)',
+    },
+
+    modalStatLabel: {
+        fontSize: 14,
+        color: colors.text.subtle,
+    },
+
+    modalStatValue: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: colors.text.primary,
+    },
+
+    modalButton: {
+        backgroundColor: colors.brand.primary,
+        paddingVertical: 14,
+        paddingHorizontal: 50,
+        borderRadius: 25,
+    },
+
+    modalButtonText: {
+        fontSize: 16,
         fontWeight: '700',
         color: '#fff',
     },
