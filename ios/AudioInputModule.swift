@@ -35,10 +35,22 @@ final class AudioInputModule: RCTEventEmitter {
     ["AudioDetection"]
   }
 
+  // Track whether JS has registered listeners
+  private var hasListeners = false
+  
+  override func startObserving() {
+    hasListeners = true
+  }
+  
+  override func stopObserving() {
+    hasListeners = false
+  }
+
   override init() {
     super.init()
     pipeline.emitDetection = { [weak self] payload in
-      self?.sendEvent(withName: "AudioDetection", body: payload ?? NSNull())
+      guard let self = self, self.hasListeners else { return }
+      self.sendEvent(withName: "AudioDetection", body: payload ?? NSNull())
     }
   }
 
