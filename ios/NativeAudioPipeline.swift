@@ -86,7 +86,7 @@ final class NativeAudioPipeline {
     private let PITCH_CLASS_ENERGY_THRESHOLD = 0.08
 
     // ✅ Strengthened: triads must have 3 pitch classes
-    private let MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD = 3
+    private let MINIMUM_ACTIVE_PITCH_CLASS_THRESHOLD = 2
 
     private let TEMPLATE_MATCH_THRESHOLD = 0.07
     private let MIN_TEMPLATE_MATCH = 2

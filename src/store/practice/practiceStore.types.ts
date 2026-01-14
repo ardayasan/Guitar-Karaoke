@@ -60,7 +60,7 @@ export interface PracticeState {
     markIncorrectAndPause: () => void;
 
     /** Mark a specific step with a result */
-    setStepResult: (index: number, result: 'correct' | 'incorrect' | 'missed') => void;
+    setStepResult: (index: number, result: 'correct' | 'incorrect' | 'missed' | 'pending') => void;
 
     advanceStep: () => void;
 

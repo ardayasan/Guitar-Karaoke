@@ -1,11 +1,12 @@
 /**
- * Practice Screen
- * Strict step-by-step input-driven practice
- * 
- * FIXES:
- * - Only debounce after CORRECT (allow immediate re-tries on incorrect)
- * - Case-insensitive note comparison
- * - Clear debounce state when advancing
+ * Practice Screen – REAL FINAL
+ *
+ * Guarantees:
+ * - New step ALWAYS starts from clean state
+ * - Previous step result cannot leak
+ * - Incorrect grace absorbs sustain carry-over
+ * - Silence clears UI + incorrect -> pending
+ * - Step change resets local guards & timeouts
  */
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
@@ -21,7 +22,6 @@ import { usePracticeStore } from "@/store";
 import colors from "@/theme/colors";
 import { AudioPipeline } from "@/services/audio/AudioPipeline";
 
-// UI Components
 import PracticeHeader from "./components/PracticeHeader";
 import CurrentDetectionDisplayer from "./components/CurrentDetectionDisplayer";
 import PracticeTabTimeline from "./components/PracticeTabTimeline";
@@ -34,10 +34,15 @@ type PracticeScreenNavigationProp =
 
 /* ================================================= */
 
-// Debounce settings
-const CORRECT_DEBOUNCE_MS = 500;  // After correct match
-const INPUT_DEBOUNCE_MS = 300;    // Between any input processing
-const ADVANCE_DELAY_MS = 600;     // Delay before advancing to next step after correct
+const INPUT_DEBOUNCE_MS = 300;
+const CORRECT_DEBOUNCE_MS = 500;
+const ADVANCE_DELAY_MS = 600;
+
+// silence safety net
+const SILENCE_TIMEOUT_MS = 350;
+
+// 🔥 main tuning knob
+const INCORRECT_GRACE_LIMIT = 3;
 
 export default function PracticeScreen() {
   const route = useRoute<PracticeScreenRouteProp>();
@@ -48,17 +53,22 @@ export default function PracticeScreen() {
   const pipelineRef = useRef<AudioPipeline | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const advanceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  /* ---------- Debounce refs ---------- */
-  // Track the step index where we last had a correct match
+  /* ---------- Detection refs ---------- */
   const lastCorrectStepRef = useRef<number>(-1);
   const lastCorrectTimeRef = useRef<number>(0);
 
-  // Track last input time to prevent rapid re-processing
   const lastInputTimeRef = useRef<number>(0);
-  const lastDetectedValueRef = useRef<string>('');
+  const lastDetectedValueRef = useRef<string>("");
 
-  /* ---------- Store (for rendering) ---------- */
+  // ⭐ per-step incorrect grace
+  const incorrectGraceCountRef = useRef<number>(0);
+
+  // ⭐ step start time to ignore stale detections
+  const stepStartTimeRef = useRef<number>(0);
+
+  /* ---------- Store ---------- */
   const {
     currentStep,
     currentStepIndex,
@@ -75,7 +85,7 @@ export default function PracticeScreen() {
   } = usePracticeStore();
 
   const [isListening, setIsListening] = useState(false);
-  const [debugMsg, setDebugMsg] = useState<string>("");
+  const [debugMsg, setDebugMsg] = useState("");
   const [hasCompleted, setHasCompleted] = useState(false);
 
   /* ================================================= */
@@ -87,199 +97,230 @@ export default function PracticeScreen() {
 
     return () => {
       pipelineRef.current?.stop();
-      pipelineRef.current = null;
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      if (advanceTimeoutRef.current) {
-        clearTimeout(advanceTimeoutRef.current);
-        advanceTimeoutRef.current = null;
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (advanceTimeoutRef.current) clearTimeout(advanceTimeoutRef.current);
+      if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
       resetPractice();
     };
   }, [tab, startPractice, resetPractice]);
 
   /* ================================================= */
-  /* TIMER                                             */
+  /* TIMER                                            */
   /* ================================================= */
   useEffect(() => {
-    if (!isListening || !timingStats.startTime) {
-      return;
-    }
+    if (!isListening || !timingStats.startTime) return;
 
-    // Update elapsed time every 100ms
     timerRef.current = setInterval(() => {
-      const now = Date.now();
-      const elapsed = now - (timingStats.startTime || now);
-      updateElapsedTime(elapsed);
+      updateElapsedTime(Date.now() - timingStats.startTime!);
     }, 100);
 
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [isListening, timingStats.startTime, updateElapsedTime]);
 
   /* ================================================= */
+  /* STEP CHANGE = HARD LOCAL RESET                    */
+  /* (skip dahil tüm advance türlerinde temiz başla)   */
+  /* ================================================= */
+  useEffect(() => {
+    // local guards reset
+    incorrectGraceCountRef.current = 0;
+    lastCorrectStepRef.current = -1;
+    lastCorrectTimeRef.current = 0;
+    lastInputTimeRef.current = 0;
+    lastDetectedValueRef.current = "";
+
+    // Mark step start time - used to ignore stale detections
+    stepStartTimeRef.current = Date.now();
+
+    // timeouts reset
+    if (advanceTimeoutRef.current) clearTimeout(advanceTimeoutRef.current);
+    if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+
+    // UI reset (özellikle manual skipte anında temizlensin)
+    const s = usePracticeStore.getState();
+    s.setDetectedNote(null);
+    s.setDetectedChord(null);
+  }, [currentStepIndex]);
+
+  /* ================================================= */
+  /* STEP ADVANCE (🔥 CLEAN RESET POINT)               */
+  /* ================================================= */
+  const advanceToNextStep = useCallback(() => {
+    usePracticeStore.getState().markCorrectAndAdvance();
+
+    // local reset (extra safety)
+    incorrectGraceCountRef.current = 0;
+    lastCorrectStepRef.current = -1;
+    lastCorrectTimeRef.current = 0;
+    lastInputTimeRef.current = 0;
+    lastDetectedValueRef.current = "";
+  }, []);
+
+  /* ================================================= */
   /* DETECTION HANDLER                                 */
   /* ================================================= */
-  const handleDetection = useCallback((detection: any) => {
-    if (!detection) return;
+  const handleDetection = useCallback(
+    (detection: any) => {
+      const state = usePracticeStore.getState();
 
-    // Get fresh state
-    const state = usePracticeStore.getState();
-    const {
-      isActive,
-      currentStep: step,
-      currentStepIndex: stepIdx,
-      setDetectedNote,
-      setDetectedChord,
-      markCorrectAndAdvance,
-      setStepResult,
-      advanceStep,
-    } = state;
+      const {
+        isActive,
+        currentStep: step,
+        currentStepIndex: stepIdx,
+        setDetectedNote,
+        setDetectedChord,
+        setStepResult,
+      } = state;
 
-    // Guards
-    if (!isActive || !step) return;
-    if (step.result === 'correct') return;
+      const applySilence = () => {
+        // UI clear
+        state.setDetectedNote(null);
+        state.setDetectedChord(null);
 
-    const now = Date.now();
+        // local guard reset
+        lastInputTimeRef.current = 0;
+        lastDetectedValueRef.current = "";
+        incorrectGraceCountRef.current = 0;
 
-    // Auto-skip rest steps and advance immediately
-    if (step.type === 'rest') {
-      // Mark as correct (no input needed for rests)
-      setStepResult(stepIdx, 'correct');
+        // incorrect -> pending (silence'ta yanlışta kalma)
+        if (isActive && step && step.result === "incorrect") {
+          setStepResult(stepIdx, "pending");
+        }
+      };
 
-      // Immediately advance to next step
-      setTimeout(() => {
-        markCorrectAndAdvance();
-      }, 100); // Small delay to show the step was processed
+      // silence watchdog
+      if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = setTimeout(applySilence, SILENCE_TIMEOUT_MS);
 
-      return;
-    }
-
-    /* ===== NOTE DETECTION ===== */
-    if (detection.note && step.type === 'note') {
-      const detectedName = String(detection.note.name).toUpperCase().trim();
-      const detectedOctave = detection.note.octave;
-      const detectedValue = `${detectedName}${detectedOctave}`;
-
-      // General input debounce: prevent processing same note too rapidly
-      if (
-        detectedValue === lastDetectedValueRef.current &&
-        now - lastInputTimeRef.current < INPUT_DEBOUNCE_MS
-      ) {
-        return; // Skip - same note detected too soon
+      // silence event
+      if (!detection || (!detection.note && !detection.chord)) {
+        applySilence();
+        return;
       }
 
-      setDetectedNote({ name: detectedName, octave: detectedOctave });
+      if (!isActive || !step) return;
+      if (step.result === "correct") return;
 
-      const expectedName = String(step.note.name).toUpperCase().trim();
+      const now = Date.now();
 
-      // Case-insensitive name comparison (octave tolerant)
-      const isCorrect = detectedName === expectedName;
+      // 🔥 CRITICAL: Ignore detections within 100ms of step start
+      // This prevents stale detections from previous step leaking into new step
+      const STEP_GRACE_MS = 100;
+      if (now - stepStartTimeRef.current < STEP_GRACE_MS) {
+        return;
+      }
 
-      // Debug
-      setDebugMsg(`Exp: "${expectedName}" | Det: "${detectedName}" | Match: ${isCorrect}`);
+      /* ---------- REST ---------- */
+      if (step.type === "rest") {
+        setStepResult(stepIdx, "correct");
+        setTimeout(advanceToNextStep, 100);
+        return;
+      }
 
-      if (isCorrect) {
-        // Check debounce only for correct matches
+      /* ================= NOTE ================= */
+      if (detection.note && step.type === "note") {
+        const detectedName = String(detection.note.name).toUpperCase().trim();
+        const detectedValue = `${detectedName}${detection.note.octave}`;
+
         if (
-          stepIdx === lastCorrectStepRef.current &&
-          now - lastCorrectTimeRef.current < CORRECT_DEBOUNCE_MS
-        ) {
-          return; // Skip - already processed this step as correct
-        }
+          detectedValue === lastDetectedValueRef.current &&
+          now - lastInputTimeRef.current < INPUT_DEBOUNCE_MS
+        )
+          return;
 
-        // Mark correct and advance after delay
-        lastCorrectStepRef.current = stepIdx;
-        lastCorrectTimeRef.current = now;
+        setDetectedNote({ name: detectedName, octave: detection.note.octave });
+
+        const expectedName = String(step.note.name).toUpperCase().trim();
+        const isCorrect = detectedName === expectedName;
+
+        setDebugMsg(
+          `Exp:${expectedName} Det:${detectedName} Correct:${isCorrect} Grace:${incorrectGraceCountRef.current}`
+        );
+
         lastInputTimeRef.current = now;
         lastDetectedValueRef.current = detectedValue;
 
-        // Clear any existing advance timeout
-        if (advanceTimeoutRef.current) {
-          clearTimeout(advanceTimeoutRef.current);
-        }
+        if (isCorrect) {
+          incorrectGraceCountRef.current = 0;
 
-        // Mark correct immediately for visual feedback
-        setStepResult(stepIdx, 'correct');
+          if (
+            stepIdx === lastCorrectStepRef.current &&
+            now - lastCorrectTimeRef.current < CORRECT_DEBOUNCE_MS
+          )
+            return;
 
-        // Advance after delay to give user time to see green
-        advanceTimeoutRef.current = setTimeout(() => {
-          markCorrectAndAdvance();
-        }, ADVANCE_DELAY_MS);
-      } else {
-        // Incorrect - mark red with debounce to prevent spam
-        lastInputTimeRef.current = now;
-        lastDetectedValueRef.current = detectedValue;
-        if (step.result !== 'incorrect') {
-          setStepResult(stepIdx, 'incorrect');
-        }
-      }
-      return;
-    }
+          lastCorrectStepRef.current = stepIdx;
+          lastCorrectTimeRef.current = now;
 
-    /* ===== CHORD DETECTION ===== */
-    if (detection.chord && step.type === 'chord') {
-      const detectedRoot = String(detection.chord.root).toUpperCase().trim();
-      const detectedType = String(detection.chord.type || '').toLowerCase();
-      const detectedValue = `${detectedRoot}${detectedType}`;
+          setStepResult(stepIdx, "correct");
 
-      // General input debounce: prevent processing same chord too rapidly
-      if (
-        detectedValue === lastDetectedValueRef.current &&
-        now - lastInputTimeRef.current < INPUT_DEBOUNCE_MS
-      ) {
-        return; // Skip - same chord detected too soon
-      }
-
-      setDetectedChord({ root: detectedRoot, type: detectedType });
-
-      const expectedChord = String(step.chordName).toUpperCase().trim();
-
-      const isCorrect =
-        expectedChord === detectedRoot ||
-        expectedChord.startsWith(detectedRoot);
-
-      if (isCorrect) {
-        if (
-          stepIdx === lastCorrectStepRef.current &&
-          now - lastCorrectTimeRef.current < CORRECT_DEBOUNCE_MS
-        ) {
+          if (advanceTimeoutRef.current)
+            clearTimeout(advanceTimeoutRef.current);
+          advanceTimeoutRef.current = setTimeout(
+            advanceToNextStep,
+            ADVANCE_DELAY_MS
+          );
           return;
         }
 
-        lastCorrectStepRef.current = stepIdx;
-        lastCorrectTimeRef.current = now;
+        // WRONG (with grace)
+        incorrectGraceCountRef.current++;
+        if (incorrectGraceCountRef.current <= INCORRECT_GRACE_LIMIT) return;
+
+        if (step.result !== "incorrect") {
+          setStepResult(stepIdx, "incorrect");
+        }
+        return;
+      }
+
+      /* ================= CHORD ================= */
+      if (detection.chord && step.type === "chord") {
+        const detectedRoot = String(detection.chord.root).toUpperCase().trim();
+        const detectedType = String(detection.chord.type || "").toLowerCase();
+        const detectedValue = `${detectedRoot}${detectedType}`;
+
+        if (
+          detectedValue === lastDetectedValueRef.current &&
+          now - lastInputTimeRef.current < INPUT_DEBOUNCE_MS
+        )
+          return;
+
+        setDetectedChord({ root: detectedRoot, type: detectedType });
+
+        const expectedChord = String(step.chordName).toUpperCase().trim();
+        const isCorrect =
+          expectedChord === detectedRoot ||
+          expectedChord.startsWith(detectedRoot);
+
         lastInputTimeRef.current = now;
         lastDetectedValueRef.current = detectedValue;
 
-        // Clear any existing advance timeout
-        if (advanceTimeoutRef.current) {
-          clearTimeout(advanceTimeoutRef.current);
+        if (isCorrect) {
+          incorrectGraceCountRef.current = 0;
+
+          setStepResult(stepIdx, "correct");
+
+          if (advanceTimeoutRef.current)
+            clearTimeout(advanceTimeoutRef.current);
+          advanceTimeoutRef.current = setTimeout(
+            advanceToNextStep,
+            ADVANCE_DELAY_MS
+          );
+          return;
         }
 
-        // Mark correct immediately for visual feedback
-        setStepResult(stepIdx, 'correct');
+        incorrectGraceCountRef.current++;
+        if (incorrectGraceCountRef.current <= INCORRECT_GRACE_LIMIT) return;
 
-        // Advance after delay to give user time to see green
-        advanceTimeoutRef.current = setTimeout(() => {
-          markCorrectAndAdvance();
-        }, ADVANCE_DELAY_MS);
-      } else {
-        lastInputTimeRef.current = now;
-        lastDetectedValueRef.current = detectedValue;
-        if (step.result !== 'incorrect') {
-          setStepResult(stepIdx, 'incorrect');
+        if (step.result !== "incorrect") {
+          setStepResult(stepIdx, "incorrect");
         }
       }
-      return;
-    }
-  }, []);
+    },
+    [advanceToNextStep]
+  );
 
   /* ================================================= */
   /* AUDIO CONTROLS                                   */
@@ -287,17 +328,18 @@ export default function PracticeScreen() {
   const handleStartListening = () => {
     if (!pipelineRef.current) return;
 
-    // If restarting after completion, reset the practice
     if (hasCompleted) {
       resetPractice();
       startPractice(tab);
       setHasCompleted(false);
     }
 
+    incorrectGraceCountRef.current = 0;
     lastCorrectStepRef.current = -1;
     lastCorrectTimeRef.current = 0;
     lastInputTimeRef.current = 0;
-    lastDetectedValueRef.current = '';
+    lastDetectedValueRef.current = "";
+
     pipelineRef.current.start(handleDetection);
     setIsListening(true);
   };
@@ -314,128 +356,56 @@ export default function PracticeScreen() {
   };
 
   /* ================================================= */
-  /* DISPLAY HELPERS                                  */
+  /* COMPLETION                                       */
   /* ================================================= */
-  const formatTime = (ms: number): string => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  const getDetectedText = () => {
-    if (lastDetectedChord) {
-      return `${lastDetectedChord.root}${lastDetectedChord.type === 'minor' ? 'm' : ''}`;
-    }
-    if (lastDetectedNote) {
-      return `${lastDetectedNote.name}${lastDetectedNote.octave}`;
-    }
-    return "--";
-  };
-
-  const getExpectedText = () => {
-    if (!currentStep) return "--";
-    if (currentStep.type === 'note') {
-      return `${currentStep.note.name}${currentStep.note.octave}`;
-    }
-    if (currentStep.type === 'chord') {
-      return currentStep.chordName;
-    }
-    return "Rest";
-  };
-
-  const getFeedbackColor = (): "neutral" | "correct" | "incorrect" => {
-    if (!currentStep) return "neutral";
-    if (currentStep.result === 'correct') return "correct";
-    if (currentStep.result === 'incorrect') return "incorrect";
-    return "neutral";
-  };
-
   const isComplete = currentStepIndex >= hydratedSteps.length;
-
-  // Check for completion and provide feedback
   useEffect(() => {
     if (isComplete && isListening) {
       completePractice();
       handleStopListening();
       setHasCompleted(true);
     }
-  }, [isComplete, isListening]);
+  }, [isComplete, isListening, completePractice]);
 
   /* ================================================= */
   /* RENDER                                           */
   /* ================================================= */
   return (
-    <SafeAreaView
-      style={{ flex: 1, backgroundColor: colors.bg.main }}
-      edges={["top"]}
-    >
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        <PracticeHeader
-          title={tab.metadata.title}
-          subtitle={tab.metadata.artist}
-        />
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg.main }}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <PracticeHeader title={tab.metadata.title} subtitle={tab.metadata.artist} />
 
-        {/* Debug message */}
-        {debugMsg ? (
+        {debugMsg && (
           <View style={styles.debugBanner}>
             <Text style={styles.debugText}>{debugMsg}</Text>
           </View>
-        ) : null}
-
-        {/* Timer and BPM */}
-        <View style={styles.timerContainer}>
-          <View style={styles.timerBox}>
-            <Text style={styles.timerLabel}>Time</Text>
-            <Text style={styles.timerValue}>{formatTime(timingStats.elapsedMs)}</Text>
-          </View>
-          <View style={styles.timerBox}>
-            <Text style={styles.timerLabel}>Expected</Text>
-            <Text style={styles.timerValue}>{formatTime(timingStats.expectedDurationMs)}</Text>
-          </View>
-          <View style={styles.timerBox}>
-            <Text style={styles.timerLabel}>BPM</Text>
-            <Text style={styles.timerValue}>{tab.metadata.bpm}</Text>
-          </View>
-        </View>
-
-        {/* Status */}
-        {isComplete && (
-          <View style={styles.completeBanner}>
-            <Text style={styles.bannerText}>
-              ✅ Complete! {timingStats.speedFeedback === 'slower' && '⏱️ Try to play faster next time!'}
-              {timingStats.speedFeedback === 'faster' && '🎯 You played faster than expected!'}
-              {timingStats.speedFeedback === 'on-time' && '🎵 Perfect timing!'}
-            </Text>
-          </View>
         )}
 
-        {/* Detection Display */}
         <CurrentDetectionDisplayer
-          value={getDetectedText()}
+          value={
+            lastDetectedChord
+              ? `${lastDetectedChord.root}${lastDetectedChord.type === "minor" ? "m" : ""
+              }`
+              : lastDetectedNote
+                ? `${lastDetectedNote.name}${lastDetectedNote.octave}`
+                : "--"
+          }
           kind={lastDetectedChord ? "chord" : lastDetectedNote ? "note" : "none"}
-          feedbackColor={getFeedbackColor()}
+          feedbackColor={
+            currentStep?.result === "correct"
+              ? "correct"
+              : currentStep?.result === "incorrect"
+                ? "incorrect"
+                : "neutral"
+          }
         />
 
-        {/* Expected indicator */}
-        <View style={styles.expectedContainer}>
-          <Text style={styles.expectedLabel}>Expected:</Text>
-          <Text style={styles.expectedValue}>{getExpectedText()}</Text>
-        </View>
+        <PracticeTabTimeline
+          tab={{ ...tab, steps: hydratedSteps }}
+          windowSize={6}
+          currentIndex={currentStepIndex}
+        />
 
-        {/* Timeline */}
-        <View style={styles.tabSection}>
-          <PracticeTabTimeline
-            tab={{ ...tab, steps: hydratedSteps }}
-            windowSize={6}
-            currentIndex={currentStepIndex}
-          />
-        </View>
-
-        {/* Stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
             <Text style={[styles.statValue, { color: colors.feedback.correct }]}>
@@ -453,23 +423,18 @@ export default function PracticeScreen() {
             <Text style={styles.statValue}>{stats.accuracy.toFixed(0)}%</Text>
             <Text style={styles.statLabel}>Accuracy</Text>
           </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{currentStepIndex + 1}/{hydratedSteps.length}</Text>
-            <Text style={styles.statLabel}>Step</Text>
-          </View>
         </View>
 
-        {/* Controls */}
         <View style={styles.controlsRow}>
           {!isListening ? (
             <View style={styles.startBtn} onTouchEnd={handleStartListening}>
               <Text style={styles.startBtnText}>
-                {hasCompleted ? '🔄 Restart' : '▶ Start'}
+                {hasCompleted ? "🔄 Restart" : "▶ Start"}
               </Text>
             </View>
           ) : (
             <View style={styles.listeningBtn}>
-              <Text style={styles.listeningBtnText}>🎤 Listening...</Text>
+              <Text style={styles.listeningBtnText}>🎤 Listening…</Text>
             </View>
           )}
           <View style={styles.quitBtn} onTouchEnd={handleQuit}>
@@ -492,102 +457,42 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     backgroundColor: colors.bg.main,
   },
-  tabSection: {
-    width: "100%",
-    marginVertical: 12,
-  },
   debugBanner: {
-    backgroundColor: 'rgba(255,255,0,0.2)',
+    backgroundColor: "rgba(255,255,0,0.2)",
     borderRadius: 6,
     padding: 6,
-    marginVertical: 4,
+    marginVertical: 6,
   },
   debugText: {
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: 11,
-    fontFamily: 'monospace',
-    color: '#ffff00',
-  },
-  completeBanner: {
-    backgroundColor: 'rgba(83,255,154,0.2)',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.feedback.correct,
-    marginVertical: 8,
-  },
-  bannerText: {
-    textAlign: 'center',
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text.primary,
-  },
-  expectedContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 8,
-    gap: 8,
-  },
-  expectedLabel: {
-    fontSize: 14,
-    color: colors.text.subtle,
-  },
-  expectedValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.utility.accent,
+    fontFamily: "monospace",
+    color: "#ffff00",
   },
   statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: "row",
+    justifyContent: "space-around",
     marginVertical: 12,
     paddingVertical: 10,
-    backgroundColor: 'rgba(36,0,56,0.5)',
+    backgroundColor: "rgba(36,0,56,0.5)",
     borderRadius: 10,
   },
   statItem: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   statValue: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.text.primary,
   },
   statLabel: {
     fontSize: 10,
     color: colors.text.subtle,
-    textTransform: 'uppercase',
-  },
-  timerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginVertical: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    backgroundColor: 'rgba(122,60,255,0.15)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(199,125,255,0.3)',
-  },
-  timerBox: {
-    alignItems: 'center',
-  },
-  timerLabel: {
-    fontSize: 10,
-    color: colors.text.subtle,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  timerValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.utility.accent,
+    textTransform: "uppercase",
   },
   controlsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    justifyContent: "center",
     gap: 12,
     marginTop: 16,
   },
@@ -598,12 +503,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   startBtnText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   listeningBtn: {
-    backgroundColor: 'rgba(83,255,154,0.2)',
+    backgroundColor: "rgba(83,255,154,0.2)",
     paddingVertical: 12,
     paddingHorizontal: 28,
     borderRadius: 20,
@@ -613,10 +518,10 @@ const styles = StyleSheet.create({
   listeningBtnText: {
     color: colors.feedback.correct,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   quitBtn: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: "rgba(255,255,255,0.1)",
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 20,
@@ -624,6 +529,6 @@ const styles = StyleSheet.create({
   quitBtnText: {
     color: colors.text.subtle,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });

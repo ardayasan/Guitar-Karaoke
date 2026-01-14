@@ -7,6 +7,10 @@ import { PracticeStep } from '@/types/practice/PracticeStep';
 export type PreparedStep = PracticeStep & {
     index: number;
     result: 'correct' | 'incorrect' | 'missed' | 'pending';
+    /** Whether this step has been counted in stats (correct/incorrect/missed) */
+    counted: boolean;
+    /** Whether this step was ever marked incorrect (sticky flag for counting) */
+    hadError: boolean;
 };
 
 // Re-export for backwards compatibility
@@ -24,6 +28,8 @@ export function prepareSteps(steps: PracticeStep[]): PreparedStep[] {
         ...step,
         index,
         result: 'pending' as const,
+        counted: false,
+        hadError: false,
     }));
 }
 
